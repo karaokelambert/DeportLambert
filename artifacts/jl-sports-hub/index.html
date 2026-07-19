@@ -123,8 +123,8 @@
                 <div id="hub-firebase-status" style="font-size:.7rem;color:#64748b;display:flex;align-items:center;gap:6px;">
                     <span class="loader"></span> Conectando...
                 </div>
-                <!-- Botón instalar PWA (solo aparece cuando el navegador lo permite) -->
-                <button id="pwa-install-btn" onclick="instalarApp()" style="display:none;align-items:center;gap:7px;padding:8px 14px;background:linear-gradient(135deg,#f97316,#3b82f6);border:none;border-radius:10px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;">
+                <!-- Botón instalar PWA -->
+                <button id="pwa-install-btn" onclick="instalarApp()" style="display:flex;align-items:center;gap:7px;padding:8px 14px;background:linear-gradient(135deg,#f97316,#3b82f6);border:none;border-radius:10px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;">
                     <i class="fa-solid fa-download"></i> Instalar App
                 </button>
                 <button onclick="abrirAdminModal()" style="padding:8px 14px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#94a3b8;font-size:.8rem;font-weight:700;cursor:pointer;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
@@ -1252,38 +1252,87 @@ function guardarNombresHub() {
     });
 }
 
-// ── SERVICE WORKER & BANNER DE INSTALACIÓN PWA ──
+// ── SERVICE WORKER ──
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
-        console.log('SW registrado:', reg.scope);
-    }).catch(err => console.warn('SW error:', err));
+    navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('SW registrado:', reg.scope))
+        .catch(err => console.warn('SW error:', err));
 }
 
+// ── INSTALACIÓN PWA ──
 let _deferredPrompt = null;
+
 window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     _deferredPrompt = e;
-    // Mostrar botón de instalación
-    const btn = document.getElementById('pwa-install-btn');
-    if (btn) btn.style.display = 'flex';
 });
 
 window.addEventListener('appinstalled', () => {
     _deferredPrompt = null;
-    const btn = document.getElementById('pwa-install-btn');
-    if (btn) btn.style.display = 'none';
+    document.getElementById('pwa-modal').style.display = 'none';
+    alert('✅ ¡App instalada correctamente!');
 });
 
 function instalarApp() {
     if (_deferredPrompt) {
+        // Chrome/Edge en Android y PC: instala directamente
         _deferredPrompt.show();
-        _deferredPrompt.userChoice.then(choice => {
-            _deferredPrompt = null;
-            const btn = document.getElementById('pwa-install-btn');
-            if (btn) btn.style.display = 'none';
-        });
+        _deferredPrompt.userChoice.then(() => { _deferredPrompt = null; });
+    } else {
+        // Safari iOS, Firefox u otros: mostrar instrucciones
+        document.getElementById('pwa-modal').style.display = 'flex';
     }
 }
+
+function cerrarPwaModal() {
+    document.getElementById('pwa-modal').style.display = 'none';
+}
 </script>
+<!-- ── MODAL INSTALACIÓN PWA ── -->
+<div id="pwa-modal" onclick="if(event.target===this)cerrarPwaModal()" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:20px;padding:28px 24px;max-width:420px;width:100%;color:#f1f5f9;position:relative;">
+    <button onclick="cerrarPwaModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#64748b;font-size:1.2rem;cursor:pointer;">✕</button>
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:2.5rem;margin-bottom:8px;">📲</div>
+      <h2 style="margin:0 0 6px;font-size:1.2rem;font-weight:900;">Instalar JL Sports Hub 360</h2>
+      <p style="margin:0;font-size:.82rem;color:#64748b;">Sigue los pasos según tu dispositivo y navegador</p>
+    </div>
+
+    <!-- Android Chrome -->
+    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:8px;">🤖 Android — Chrome</div>
+      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
+        <li>Toca el menú <strong>⋮</strong> (tres puntos) arriba a la derecha</li>
+        <li>Selecciona <strong>"Añadir a pantalla de inicio"</strong></li>
+        <li>Toca <strong>"Añadir"</strong> para confirmar</li>
+      </ol>
+    </div>
+
+    <!-- iPhone Safari -->
+    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#3b82f6;margin-bottom:8px;">🍎 iPhone / iPad — Safari</div>
+      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
+        <li>Toca el botón <strong>Compartir</strong> <span style="font-size:1rem;">⎙</span> en la barra inferior</li>
+        <li>Desplázate y toca <strong>"Añadir a pantalla de inicio"</strong></li>
+        <li>Toca <strong>"Añadir"</strong> para confirmar</li>
+      </ol>
+    </div>
+
+    <!-- PC Chrome/Edge -->
+    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
+      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:8px;">💻 PC / Mac — Chrome o Edge</div>
+      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
+        <li>Busca el ícono <strong>⊕</strong> o <strong>🖥</strong> al final de la barra de direcciones</li>
+        <li>Haz clic en él y luego en <strong>"Instalar"</strong></li>
+        <li>Si no aparece, ve al menú <strong>⋮ → Instalar JL Sports Hub 360</strong></li>
+      </ol>
+    </div>
+
+    <p style="margin:0;text-align:center;font-size:.75rem;color:#475569;">
+      Una vez instalada, la app funciona <strong>sin internet</strong> y aparece en tu pantalla de inicio como cualquier app nativa.
+    </p>
+  </div>
+</div>
+
 </body>
 </html>
