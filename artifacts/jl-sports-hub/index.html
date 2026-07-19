@@ -502,7 +502,14 @@ const DISC_DEFAULTS = [
     { nombre:'Béisbol',     emoji:'⚾' }
 ];
 
-// ── HUB: cargar nombres y logos ──
+// Aplicar defaults inmediatamente para que nunca quede en "Cargando..."
+for (let i = 1; i <= 4; i++) {
+    const def = DISC_DEFAULTS[i - 1];
+    document.getElementById('name-' + i).innerText = def.nombre;
+    document.getElementById('icon-box-' + i).innerHTML = `<span id="emoji-${i}">${def.emoji}</span>`;
+}
+
+// ── HUB: cargar nombres y logos desde Firebase (actualiza si hay datos) ──
 database.ref('config/disciplinas').on('value', snap => {
     const data = snap.val() || {};
     for (let i = 1; i <= 4; i++) {
@@ -515,6 +522,9 @@ database.ref('config/disciplinas').on('value', snap => {
             box.innerHTML = `<span id="emoji-${i}">${info.emoji || DISC_DEFAULTS[i-1].emoji}</span>`;
         }
     }
+}, err => {
+    // Si Firebase bloquea la lectura, los defaults ya están aplicados
+    console.warn('Firebase config/disciplinas:', err.message);
 });
 
 // ── HUB → SISTEMA ──
