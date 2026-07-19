@@ -6,8 +6,6 @@
     <title>JL Sports Hub 360</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -466,18 +464,122 @@
      JAVASCRIPT
 ════════════════════════════════════════════════ -->
 <script>
-// ── FIREBASE ──
-const firebaseConfig = {
-    apiKey: "AIzaSyBPaGqgt4JxHcBF0c6znEXd25Ikdul4c0",
-    authDomain: "jl-sports-club-360.firebaseapp.com",
-    databaseURL: "https://jl-sports-club-360-default-rtdb.firebaseio.com",
-    projectId: "jl-sports-club-360",
-    storageBucket: "jl-sports-club-360.firebasestorage.app",
-    messagingSenderId: "1078137081378",
-    appId: "1:1078137081378:web:dade5982b8b858c4b9c47b"
-};
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+// ── BASE DE DATOS LOCAL (localStorage) ──
+// Reemplaza Firebase con almacenamiento local en el navegador.
+// Todos los datos se guardan en localStorage y persisten entre sesiones.
+const STORAGE_KEY = 'jlsports_db';
+
+function _getDB() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function _saveDB(data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+function _getPath(data, parts) {
+    let node = data;
+    for (const p of parts) {
+        if (node === null || node === undefined || typeof node !== 'object') return null;
+        node = node[p];
+    }
+    return node !== undefined ? node : null;
+}
+function _setPath(data, parts, value) {
+    if (parts.length === 0) return;
+    let node = data;
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (!node[parts[i]] || typeof node[parts[i]] !== 'object') node[parts[i]] = {};
+        node = node[parts[i]];
+    }
+    if (value === null) { delete node[parts[parts.length - 1]]; }
+    else { node[parts[parts.length - 1]] = value; }
+}
+const _listeners = {};
+function _notify(changedPath) {
+    const db = _getDB();
+    Object.keys(_listeners).forEach(lp => {
+        const related = lp === changedPath || changedPath.startsWith(lp === '' ? '' : lp + '/') || lp.startsWith(changedPath === '' ? '' : changedPath + '/') || lp === '' || changedPath === '';
+        if (related) {
+            const parts = lp ? lp.split('/').filter(Boolean) : [];
+            const val = parts.length ? _getPath(db, parts) : db;
+            _listeners[lp].slice().forEach(cb => { try { cb(_makeSnap(lp, val)); } catch(e){} });
+        }
+    });
+}
+function _makeSnap(path, val) {
+    const v = (val !== undefined ? val : null);
+    return {
+        val: () => v,
+        exists: () => v !== null && v !== undefined,
+        numChildren: () => (v && typeof v === 'object' ? Object.keys(v).length : 0),
+        key: path ? path.split('/').filter(Boolean).pop() || null : null,
+        forEach: function(cb) {
+            if (v && typeof v === 'object') {
+                Object.keys(v).forEach(k => cb(_makeSnap(path ? path + '/' + k : k, v[k])));
+            }
+        }
+    };
+}
+function _makeRef(path) {
+    const p = (path || '').replace(/^\/+|\/+$/g, '');
+    const parts = p ? p.split('/').filter(Boolean) : [];
+    return {
+        key: parts.length ? parts[parts.length - 1] : null,
+        on: function(event, callback, errorCb) {
+            if (p === '.info/connected') {
+                setTimeout(() => callback(_makeSnap(p, true)), 50);
+                return this;
+            }
+            if (!_listeners[p]) _listeners[p] = [];
+            _listeners[p].push(callback);
+            const db = _getDB();
+            const val = parts.length ? _getPath(db, parts) : db;
+            setTimeout(() => callback(_makeSnap(p, val)), 0);
+            return this;
+        },
+        off: function() { delete _listeners[p]; },
+        once: function(event, callback) {
+            const db = _getDB();
+            const val = parts.length ? _getPath(db, parts) : db;
+            const snap = _makeSnap(p, val);
+            if (callback) { setTimeout(() => callback(snap), 0); return { catch: () => ({}) }; }
+            return Promise.resolve(snap);
+        },
+        set: function(value) {
+            const db = _getDB();
+            if (parts.length === 0) { _saveDB(value || {}); }
+            else { _setPath(db, parts, value); _saveDB(db); }
+            _notify(p);
+            return Promise.resolve();
+        },
+        update: function(updates) {
+            const db = _getDB();
+            const changed = new Set();
+            Object.keys(updates).forEach(up => {
+                const uparts = up.split('/').filter(Boolean);
+                _setPath(db, uparts, updates[up]);
+                changed.add(up);
+            });
+            _saveDB(db);
+            changed.forEach(cp => _notify(cp));
+            return Promise.resolve();
+        },
+        remove: function() {
+            const db = _getDB();
+            if (parts.length === 0) { _saveDB({}); }
+            else { _setPath(db, parts, null); _saveDB(db); }
+            _notify(p);
+            return Promise.resolve();
+        },
+        push: function() {
+            const key = '-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+            const childPath = p ? p + '/' + key : key;
+            const childRef = _makeRef(childPath);
+            childRef.key = key;
+            return childRef;
+        }
+    };
+}
+const database = { ref: (path) => _makeRef(path || '') };
 
 // Firebase status → hub
 database.ref('.info/connected').on('value', snap => {
@@ -539,23 +641,27 @@ function irADisciplina(d) {
     BASE      = 'disciplina' + d;
     discInfo  = { ...(DISC_DEFAULTS[d-1] || { nombre:'Disciplina '+d, emoji:'🏆' }) };
 
-    // Leer nombre actualizado de Firebase antes de mostrar
+    // Mostrar pantalla inmediatamente con defaults (no esperar Firebase)
+    actualizarUIDisc();
+    document.getElementById('hub-screen').style.display     = 'none';
+    document.getElementById('sistema-screen').style.display = 'flex';
+    document.getElementById('sistema-screen').className     = 'min-h-screen flex flex-col bg-slate-900';
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('dashboard-screen').classList.add('hidden');
+    document.getElementById('login-form').reset();
+    document.getElementById('login-error').classList.add('hidden');
+    sessionActual = { nombre:'', cedula:'', rol:'Público' };
+    window.scrollTo(0, 0);
+
+    // Intentar actualizar nombre desde Firebase si hay permisos
     database.ref('config/disciplinas/d' + d).once('value', snap => {
         const cfg = snap.val();
-        if (cfg) { discInfo.nombre = cfg.nombre || discInfo.nombre; discInfo.emoji = cfg.emoji || discInfo.emoji; }
-        actualizarUIDisc();
-
-        // Mostrar pantalla sistema
-        document.getElementById('hub-screen').style.display     = 'none';
-        document.getElementById('sistema-screen').style.display = 'flex';
-        document.getElementById('sistema-screen').className     = 'min-h-screen flex flex-col bg-slate-900';
-        document.getElementById('login-screen').classList.remove('hidden');
-        document.getElementById('dashboard-screen').classList.add('hidden');
-        document.getElementById('login-form').reset();
-        document.getElementById('login-error').classList.add('hidden');
-        sessionActual = { nombre:'', cedula:'', rol:'Público' };
-        window.scrollTo(0, 0);
-    });
+        if (cfg) {
+            discInfo.nombre = cfg.nombre || discInfo.nombre;
+            discInfo.emoji  = cfg.emoji  || discInfo.emoji;
+            actualizarUIDisc();
+        }
+    }).catch(() => {});
 }
 
 function volverAlHub() {
