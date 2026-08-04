@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "JL Sports Hub 360"
+version = "1.0.0"
+id = "artifacts/jl-sports-hub"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25198
+
+[services.development]
+run = "pnpm --filter @workspace/jl-sports-hub run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/jl-sports-hub", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/jl-sports-hub/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25198"
+BASE_PATH = "/"
