@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jl-sports-hub-v2';
+const CACHE_NAME = 'jl-sports-hub-v1';
 const ASSETS = [
   '/',
   '/index.html',

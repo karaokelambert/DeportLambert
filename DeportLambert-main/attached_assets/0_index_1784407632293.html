@@ -4,22 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JL Sports Hub 360</title>
-
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#f97316">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="JL Sports">
-    <link rel="apple-touch-icon" href="/icon-192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-
-    <!-- Supabase SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -126,10 +114,6 @@
                 <div id="hub-firebase-status" style="font-size:.7rem;color:#64748b;display:flex;align-items:center;gap:6px;">
                     <span class="loader"></span> Conectando...
                 </div>
-                <!-- Botón instalar PWA -->
-                <button id="pwa-install-btn" onclick="instalarApp()" style="display:flex;align-items:center;gap:7px;padding:8px 14px;background:linear-gradient(135deg,#f97316,#3b82f6);border:none;border-radius:10px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;">
-                    <i class="fa-solid fa-download"></i> Instalar App
-                </button>
                 <button onclick="abrirAdminModal()" style="padding:8px 14px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#94a3b8;font-size:.8rem;font-weight:700;cursor:pointer;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
                     <i class="fa-solid fa-gear"></i> Configurar
                 </button>
@@ -482,304 +466,27 @@
      JAVASCRIPT
 ════════════════════════════════════════════════ -->
 <script>
-// ── BASE DE DATOS LOCAL (localStorage) ──
-// Reemplaza Firebase con almacenamiento local en el navegador.
-// Todos los datos se guardan en localStorage y persisten entre sesiones.
-// ── ADAPTADOR DE BASE DE DATOS SUPABASE ──
-const SUPABASE_URL = "https://dlukaxqphlmdmpcqvtsy.supabase.co";
-const SUPABASE_KEY = "sb_publishable_Yse1r_mR9-0z67mI-rM6tQ_e-TlTLQA";
-const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ── FIREBASE ──
+const firebaseConfig = {
+    apiKey: "AIzaSyBPaGqgt4JxHcBF0c6znEXd25Ikdul4c0",
+    authDomain: "jl-sports-club-360.firebaseapp.com",
+    databaseURL: "https://jl-sports-club-360-default-rtdb.firebaseio.com",
+    projectId: "jl-sports-club-360",
+    storageBucket: "jl-sports-club-360.firebasestorage.app",
+    messagingSenderId: "1078137081378",
+    appId: "1:1078137081378:web:dade5982b8b858c4b9c47b"
+};
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
 
-class SupabaseStoreAdapter {
-    constructor() {
-        this.cache = {};
-        this.listeners = new Map();
-        this.connected = false;
-        this.init();
-    }
-
-    async init() {
-        await this.fetchAll();
-        setInterval(() => this.fetchAll(), 3000);
-    }
-
-    async fetchAll() {
-        try {
-            const { data, error } = await _supabase
-                .from('jlsports_store')
-                .select('*');
-            if (error) {
-                console.error("Error al obtener los datos de Supabase:", error);
-                this.notifyConnected(false);
-                return;
-            }
-            if (data) {
-                const newCache = {};
-                for (const row of data) {
-                    newCache[row.path] = row.data;
-                }
-                this.cache = newCache;
-                this.notifyConnected(true);
-                this.emitAll();
-            }
-        } catch (e) {
-            console.error("Excepción de sincronización de Supabase:", e);
-            this.notifyConnected(false);
-        }
-    }
-
-    notifyConnected(status) {
-        this.connected = status;
-        const callbacks = this.listeners.get('.info/connected') || [];
-        callbacks.forEach(cb => {
-            try { cb({ val: () => status }); } catch(e){}
-        });
-    }
-
-    getValueAtPath(path) {
-        if (!path) return this.cache;
-        const parts = path.split('/').filter(Boolean);
-        if (parts.length === 0) return this.cache;
-        let current = this.cache[parts[0]];
-        for (let i = 1; i < parts.length; i++) {
-            if (current === undefined || current === null) return null;
-            current = current[parts[i]];
-        }
-        return current !== undefined ? current : null;
-    }
-
-    emitAll() {
-        for (const [path, cbs] of this.listeners.entries()) {
-            if (path === '.info/connected') continue;
-            const val = this.getValueAtPath(path);
-            const snap = {
-                val: () => val,
-                exists: () => val !== null && val !== undefined,
-                numChildren: () => (val && typeof val === 'object' ? Object.keys(val).length : 0),
-                key: path.split('/').filter(Boolean).pop() || null,
-                forEach: (cb) => {
-                    if (val && typeof val === 'object') {
-                        Object.keys(val).forEach(k => cb({
-                            val: () => val[k],
-                            exists: () => val[k] !== null && val[k] !== undefined,
-                            numChildren: () => (val[k] && typeof val[k] === 'object' ? Object.keys(val[k]).length : 0),
-                            key: k
-                        }));
-                    }
-                }
-            };
-            cbs.forEach(cb => {
-                try { cb(snap); } catch(e){}
-            });
-        }
-    }
-
-    ref(path = '') {
-        const cleanPath = path.replace(/^\/+|\/+$/g, '');
-        const self = this;
-        if (cleanPath === '.info/connected') {
-            return {
-                on(eventType, callback) {
-                    if (!self.listeners.has('.info/connected')) {
-                        self.listeners.set('.info/connected', []);
-                    }
-                    self.listeners.get('.info/connected').push(callback);
-                    try { callback({ val: () => self.connected }); } catch(e){}
-                    return callback;
-                },
-                once(eventType, callback) {
-                    const snap = { val: () => self.connected };
-                    if (typeof callback === 'function') {
-                        try { callback(snap); } catch(e){}
-                    }
-                    return Promise.resolve(snap);
-                },
-                off() {
-                    self.listeners.delete('.info/connected');
-                }
-            };
-        }
-
-        return {
-            path: cleanPath,
-            child(sub) {
-                const p = cleanPath ? `${cleanPath}/${sub}` : sub;
-                return self.ref(p);
-            },
-            once(eventType, callback) {
-                return new Promise((resolve) => {
-                    const val = self.getValueAtPath(cleanPath);
-                    const snap = {
-                        val: () => val,
-                        exists: () => val !== null && val !== undefined,
-                        numChildren: () => (val && typeof val === 'object' ? Object.keys(val).length : 0),
-                        key: cleanPath.split('/').filter(Boolean).pop() || null,
-                        forEach: (cb) => {
-                            if (val && typeof val === 'object') {
-                                Object.keys(val).forEach(k => cb({
-                                    val: () => val[k],
-                                    exists: () => val[k] !== null && val[k] !== undefined,
-                                    numChildren: () => (val[k] && typeof val[k] === 'object' ? Object.keys(val[k]).length : 0),
-                                    key: k
-                                }));
-                            }
-                        }
-                    };
-                    if (typeof callback === 'function') {
-                        try { callback(snap); } catch(e){}
-                    }
-                    resolve(snap);
-                });
-            },
-            on(eventType, callback) {
-                if (!self.listeners.has(cleanPath)) {
-                    self.listeners.set(cleanPath, []);
-                }
-                self.listeners.get(cleanPath).push(callback);
-                const val = self.getValueAtPath(cleanPath);
-                const snap = {
-                    val: () => val,
-                    exists: () => val !== null && val !== undefined,
-                    numChildren: () => (val && typeof val === 'object' ? Object.keys(val).length : 0),
-                    key: cleanPath.split('/').filter(Boolean).pop() || null,
-                    forEach: (cb) => {
-                        if (val && typeof val === 'object') {
-                            Object.keys(val).forEach(k => cb({
-                                val: () => val[k],
-                                exists: () => val[k] !== null && val[k] !== undefined,
-                                numChildren: () => (val[k] && typeof val[k] === 'object' ? Object.keys(val[k]).length : 0),
-                                key: k
-                            }));
-                        }
-                    }
-                };
-                try { callback(snap); } catch(e){}
-                return callback;
-            },
-            off(eventType, callback) {
-                if (self.listeners.has(cleanPath)) {
-                    if (callback) {
-                        const list = self.listeners.get(cleanPath).filter(cb => cb !== callback);
-                        self.listeners.set(cleanPath, list);
-                    } else {
-                        self.listeners.delete(cleanPath);
-                    }
-                }
-            },
-            async set(value) {
-                const parts = cleanPath.split('/').filter(Boolean);
-                if (parts.length === 0) return;
-                const topKey = parts[0];
-                let topDoc = self.cache[topKey] ? JSON.parse(JSON.stringify(self.cache[topKey])) : {};
-                
-                if (parts.length === 1) {
-                    topDoc = value;
-                } else {
-                    topDoc = self.deepSet(topDoc, parts.slice(1), value);
-                }
-                self.cache[topKey] = topDoc;
-                self.emitAll();
-                const { error } = await _supabase
-                    .from('jlsports_store')
-                    .upsert({ path: topKey, data: topDoc });
-                if (error) console.error("Error guardando en Supabase:", error);
-                await self.fetchAll();
-            },
-            async update(updates) {
-                const byTopKey = {};
-                for (const [p, val] of Object.entries(updates)) {
-                    const fullPath = p.startsWith('/') ? p.slice(1) : (cleanPath ? `${cleanPath}/${p}` : p);
-                    const parts = fullPath.split('/').filter(Boolean);
-                    if (parts.length === 0) continue;
-                    const topKey = parts[0];
-                    if (!byTopKey[topKey]) {
-                        byTopKey[topKey] = self.cache[topKey] ? JSON.parse(JSON.stringify(self.cache[topKey])) : {};
-                    }
-                    if (parts.length === 1) {
-                        byTopKey[topKey] = val;
-                    } else {
-                        byTopKey[topKey] = self.deepSet(byTopKey[topKey], parts.slice(1), val);
-                    }
-                }
-                for (const [topKey, doc] of Object.entries(byTopKey)) {
-                    self.cache[topKey] = doc;
-                    const { error } = await _supabase
-                        .from('jlsports_store')
-                        .upsert({ path: topKey, data: doc });
-                    if (error) console.error("Error al actualizar en Supabase:", error);
-                }
-                self.emitAll();
-                await self.fetchAll();
-            },
-            async remove() {
-                const parts = cleanPath.split('/').filter(Boolean);
-                if (parts.length === 0) {
-                    self.cache = {};
-                    const { error } = await _supabase
-                        .from('jlsports_store')
-                        .delete()
-                        .neq('path', '');
-                    if (error) console.error("Error al limpiar base de datos en Supabase:", error);
-                } else if (parts.length === 1) {
-                    delete self.cache[parts[0]];
-                    const { error } = await _supabase
-                        .from('jlsports_store')
-                        .delete()
-                        .eq('path', parts[0]);
-                    if (error) console.error("Error al eliminar ruta en Supabase:", error);
-                } else {
-                    const topKey = parts[0];
-                    let topDoc = self.cache[topKey] ? JSON.parse(JSON.stringify(self.cache[topKey])) : {};
-                    topDoc = self.deepSet(topDoc, parts.slice(1), null);
-                    self.cache[topKey] = topDoc;
-                    const { error } = await _supabase
-                        .from('jlsports_store')
-                        .upsert({ path: topKey, data: topDoc });
-                    if (error) console.error("Error al eliminar subruta en Supabase:", error);
-                }
-                self.emitAll();
-                await self.fetchAll();
-            },
-            push(value) {
-                const key = '-N' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-                const childRef = self.ref(cleanPath ? `${cleanPath}/${key}` : key);
-                if (value !== undefined) {
-                    const p = childRef.set(value).then(() => childRef);
-                    p.key = key;
-                    return p;
-                }
-                return { key, set: (v) => childRef.set(v) };
-            }
-        };
-    }
-
-    deepSet(obj, parts, value) {
-        if (!obj || typeof obj !== 'object') obj = {};
-        const clone = Array.isArray(obj) ? [...obj] : { ...obj };
-        const [head, ...tail] = parts;
-        if (tail.length === 0) {
-            if (value === null || value === undefined) {
-                delete clone[head];
-            } else {
-                clone[head] = value;
-            }
-        } else {
-            const child = clone[head] && typeof clone[head] === 'object' ? clone[head] : {};
-            clone[head] = this.deepSet(child, tail, value);
-        }
-        return clone;
-    }
-}
-const database = new SupabaseStoreAdapter();
-
-// Supabase status → hub
+// Firebase status → hub
 database.ref('.info/connected').on('value', snap => {
     const el = document.getElementById('hub-firebase-status');
     const el2 = document.getElementById('sys-firebase-status');
     if (snap.val()) {
-        const ok = '<i class="fa-solid fa-circle-check" style="color:#4ade80;font-size:.75rem;"></i> Supabase En línea';
+        const ok = '<i class="fa-solid fa-circle-check" style="color:#4ade80;font-size:.75rem;"></i> En línea';
         if (el)  { el.innerHTML = ok; el.style.color = '#4ade80'; }
-        if (el2) el2.innerHTML = '<i class="fa-solid fa-circle-check text-green-400"></i> Supabase En línea';
+        if (el2) el2.innerHTML = '<i class="fa-solid fa-circle-check text-green-400"></i> Sistema en línea';
     } else {
         const wait = '<span class="loader"></span> Reconectando...';
         if (el)  { el.innerHTML = wait; el.style.color = '#fbbf24'; }
@@ -795,14 +502,7 @@ const DISC_DEFAULTS = [
     { nombre:'Béisbol',     emoji:'⚾' }
 ];
 
-// Aplicar defaults inmediatamente para que nunca quede en "Cargando..."
-for (let i = 1; i <= 4; i++) {
-    const def = DISC_DEFAULTS[i - 1];
-    document.getElementById('name-' + i).innerText = def.nombre;
-    document.getElementById('icon-box-' + i).innerHTML = `<span id="emoji-${i}">${def.emoji}</span>`;
-}
-
-// ── HUB: cargar nombres y logos desde Firebase (actualiza si hay datos) ──
+// ── HUB: cargar nombres y logos ──
 database.ref('config/disciplinas').on('value', snap => {
     const data = snap.val() || {};
     for (let i = 1; i <= 4; i++) {
@@ -815,9 +515,6 @@ database.ref('config/disciplinas').on('value', snap => {
             box.innerHTML = `<span id="emoji-${i}">${info.emoji || DISC_DEFAULTS[i-1].emoji}</span>`;
         }
     }
-}, err => {
-    // Si Firebase bloquea la lectura, los defaults ya están aplicados
-    console.warn('Firebase config/disciplinas:', err.message);
 });
 
 // ── HUB → SISTEMA ──
@@ -832,27 +529,23 @@ function irADisciplina(d) {
     BASE      = 'disciplina' + d;
     discInfo  = { ...(DISC_DEFAULTS[d-1] || { nombre:'Disciplina '+d, emoji:'🏆' }) };
 
-    // Mostrar pantalla inmediatamente con defaults (no esperar Firebase)
-    actualizarUIDisc();
-    document.getElementById('hub-screen').style.display     = 'none';
-    document.getElementById('sistema-screen').style.display = 'flex';
-    document.getElementById('sistema-screen').className     = 'min-h-screen flex flex-col bg-slate-900';
-    document.getElementById('login-screen').classList.remove('hidden');
-    document.getElementById('dashboard-screen').classList.add('hidden');
-    document.getElementById('login-form').reset();
-    document.getElementById('login-error').classList.add('hidden');
-    sessionActual = { nombre:'', cedula:'', rol:'Público' };
-    window.scrollTo(0, 0);
-
-    // Intentar actualizar nombre desde Firebase si hay permisos
+    // Leer nombre actualizado de Firebase antes de mostrar
     database.ref('config/disciplinas/d' + d).once('value', snap => {
         const cfg = snap.val();
-        if (cfg) {
-            discInfo.nombre = cfg.nombre || discInfo.nombre;
-            discInfo.emoji  = cfg.emoji  || discInfo.emoji;
-            actualizarUIDisc();
-        }
-    }).catch(() => {});
+        if (cfg) { discInfo.nombre = cfg.nombre || discInfo.nombre; discInfo.emoji = cfg.emoji || discInfo.emoji; }
+        actualizarUIDisc();
+
+        // Mostrar pantalla sistema
+        document.getElementById('hub-screen').style.display     = 'none';
+        document.getElementById('sistema-screen').style.display = 'flex';
+        document.getElementById('sistema-screen').className     = 'min-h-screen flex flex-col bg-slate-900';
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('dashboard-screen').classList.add('hidden');
+        document.getElementById('login-form').reset();
+        document.getElementById('login-error').classList.add('hidden');
+        sessionActual = { nombre:'', cedula:'', rol:'Público' };
+        window.scrollTo(0, 0);
+    });
 }
 
 function volverAlHub() {
@@ -1427,88 +1120,6 @@ function guardarNombresHub() {
         });
     });
 }
-
-// ── SERVICE WORKER ──
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('SW registrado:', reg.scope))
-        .catch(err => console.warn('SW error:', err));
-}
-
-// ── INSTALACIÓN PWA ──
-let _deferredPrompt = null;
-
-window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    _deferredPrompt = e;
-});
-
-window.addEventListener('appinstalled', () => {
-    _deferredPrompt = null;
-    document.getElementById('pwa-modal').style.display = 'none';
-    alert('✅ ¡App instalada correctamente!');
-});
-
-function instalarApp() {
-    if (_deferredPrompt) {
-        // Chrome/Edge en Android y PC: instala directamente
-        _deferredPrompt.show();
-        _deferredPrompt.userChoice.then(() => { _deferredPrompt = null; });
-    } else {
-        // Safari iOS, Firefox u otros: mostrar instrucciones
-        document.getElementById('pwa-modal').style.display = 'flex';
-    }
-}
-
-function cerrarPwaModal() {
-    document.getElementById('pwa-modal').style.display = 'none';
-}
 </script>
-<!-- ── MODAL INSTALACIÓN PWA ── -->
-<div id="pwa-modal" onclick="if(event.target===this)cerrarPwaModal()" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#0f172a;border:1px solid #334155;border-radius:20px;padding:28px 24px;max-width:420px;width:100%;color:#f1f5f9;position:relative;">
-    <button onclick="cerrarPwaModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:#64748b;font-size:1.2rem;cursor:pointer;">✕</button>
-    <div style="text-align:center;margin-bottom:20px;">
-      <div style="font-size:2.5rem;margin-bottom:8px;">📲</div>
-      <h2 style="margin:0 0 6px;font-size:1.2rem;font-weight:900;">Instalar JL Sports Hub 360</h2>
-      <p style="margin:0;font-size:.82rem;color:#64748b;">Sigue los pasos según tu dispositivo y navegador</p>
-    </div>
-
-    <!-- Android Chrome -->
-    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
-      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#f97316;margin-bottom:8px;">🤖 Android — Chrome</div>
-      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
-        <li>Toca el menú <strong>⋮</strong> (tres puntos) arriba a la derecha</li>
-        <li>Selecciona <strong>"Añadir a pantalla de inicio"</strong></li>
-        <li>Toca <strong>"Añadir"</strong> para confirmar</li>
-      </ol>
-    </div>
-
-    <!-- iPhone Safari -->
-    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:10px;">
-      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#3b82f6;margin-bottom:8px;">🍎 iPhone / iPad — Safari</div>
-      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
-        <li>Toca el botón <strong>Compartir</strong> <span style="font-size:1rem;">⎙</span> en la barra inferior</li>
-        <li>Desplázate y toca <strong>"Añadir a pantalla de inicio"</strong></li>
-        <li>Toca <strong>"Añadir"</strong> para confirmar</li>
-      </ol>
-    </div>
-
-    <!-- PC Chrome/Edge -->
-    <div style="background:#1e293b;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
-      <div style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#22c55e;margin-bottom:8px;">💻 PC / Mac — Chrome o Edge</div>
-      <ol style="margin:0;padding-left:18px;font-size:.82rem;color:#cbd5e1;line-height:1.8;">
-        <li>Busca el ícono <strong>⊕</strong> o <strong>🖥</strong> al final de la barra de direcciones</li>
-        <li>Haz clic en él y luego en <strong>"Instalar"</strong></li>
-        <li>Si no aparece, ve al menú <strong>⋮ → Instalar JL Sports Hub 360</strong></li>
-      </ol>
-    </div>
-
-    <p style="margin:0;text-align:center;font-size:.75rem;color:#475569;">
-      Una vez instalada, la app funciona <strong>sin internet</strong> y aparece en tu pantalla de inicio como cualquier app nativa.
-    </p>
-  </div>
-</div>
-
 </body>
 </html>
