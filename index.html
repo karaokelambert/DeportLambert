@@ -366,6 +366,15 @@
                         <button onclick="guardarConfigFormato()" class="mt-4 w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-sm transition">Establecer Estructura de Competencia</button>
                     </div>
                     <div class="bg-slate-900/30 p-4 rounded-xl border border-slate-700/60"><p class="text-sm text-slate-300">Formato Actual: <span id="formato-actual-label" class="text-purple-400 font-bold">Cargando...</span></p></div>
+                    
+                    <div id="asignacion-grupos-zona" class="mt-6 bg-slate-900/50 p-4 rounded-xl border border-slate-700 hidden">
+                        <h3 class="text-sm font-bold text-white mb-4"><i class="fa-solid fa-list-check text-purple-400 mr-2"></i> Asignación Masiva a Grupos</h3>
+                        <div id="lista-asignacion-equipos" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                            <!-- JS dinámico -->
+                        </div>
+                        <button onclick="guardarAsignacionMasiva()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm transition mb-3"><i class="fa-solid fa-floppy-disk mr-1"></i> Guardar Asignaciones</button>
+                        <button onclick="generarCalendarioGrupos()" class="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-sm transition"><i class="fa-solid fa-calendar-plus mr-1"></i> Generar Calendario por Grupos (Reemplaza el actual)</button>
+                    </div>
                 </section>
 
                 <!-- CALENDARIO -->
@@ -1239,6 +1248,11 @@ function vincularListeners() {
         cJug.innerHTML = htmlJug;
         vincularJugadores();
         renderPartidos();
+        
+        // Update mass assignment if visible
+        if (typeof renderizarAsignacionGrupos === 'function') {
+            renderizarAsignacionGrupos();
+        }
     });
     activeListeners.push(rEq);
 }
@@ -1358,6 +1372,93 @@ function guardarConfigFormato() {
     }).catch(err => {
         alert('Error al guardar formato: ' + err.message);
     });
+}
+
+function renderizarAsignacionGrupos() {
+    const contenedor = document.getElementById('lista-asignacion-equipos');
+    if (!contenedor || window.formatoActualId !== 'grupos' || !sessionActual || sessionActual.rol !== 'Administrador') return;
+    
+    let html = '';
+    Object.keys(cacheEquipos).forEach(key => {
+        const eq = cacheEquipos[key];
+        const currentGroup = eq.grupo || '';
+        html += `<div class="bg-slate-800 p-3 rounded-lg border border-slate-600 flex items-center justify-between">
+            <span class="text-sm font-bold text-white truncate max-w-[150px]">${eq.nombre}</span>
+            <select id="asig-grupo-${key}" class="bg-slate-700 border border-slate-600 text-white text-xs rounded p-1">
+                <option value="" ${currentGroup===''?'selected':''}>Ninguno</option>
+                <option value="A" ${currentGroup==='A'?'selected':''}>Grupo A</option>
+                <option value="B" ${currentGroup==='B'?'selected':''}>Grupo B</option>
+                <option value="C" ${currentGroup==='C'?'selected':''}>Grupo C</option>
+                <option value="D" ${currentGroup==='D'?'selected':''}>Grupo D</option>
+            </select>
+        </div>`;
+    });
+    contenedor.innerHTML = html;
+}
+
+function guardarAsignacionMasiva() {
+    if (sessionActual.rol !== 'Administrador') return;
+    const updates = {};
+    Object.keys(cacheEquipos).forEach(key => {
+        const sel = document.getElementById('asig-grupo-'+key);
+        if (sel) {
+            updates[`equipos/${key}/grupo`] = sel.value;
+        }
+    });
+    database.ref(BASE).update(updates).then(() => {
+        alert('Asignaciones masivas guardadas.');
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function generarCalendarioGrupos() {
+    if (sessionActual.rol !== 'Administrador') return;
+    if (!confirm('¿Estás seguro de generar el calendario? Esto BORRARÁ TODOS los partidos existentes y generará un calendario nuevo de "Todos contra Todos" internamente para cada grupo.')) return;
+    
+    const grupos = {};
+    Object.keys(cacheEquipos).forEach(key => {
+        const eq = cacheEquipos[key];
+        if (eq.grupo) {
+            if (!grupos[eq.grupo]) grupos[eq.grupo] = [];
+            grupos[eq.grupo].push(eq.nombre);
+        }
+    });
+    
+    let p = [];
+    Object.keys(grupos).forEach(g => {
+        const equipos = grupos[g];
+        for (let i = 0; i < equipos.length; i++) {
+            for (let j = i + 1; j < equipos.length; j++) {
+                p.push({
+                    local: equipos[i],
+                    visita: equipos[j],
+                    fecha: 'Por Definir',
+                    hora: 'Por Definir',
+                    cancha: 'Por Definir',
+                    ptsLocal: 0,
+                    ptsVisita: 0,
+                    estado: 'Programado',
+                    grupo: g
+                });
+            }
+        }
+    });
+    
+    if (p.length === 0) {
+        alert('No hay suficientes equipos asignados a grupos para generar partidos.');
+        return;
+    }
+    
+    ref('partidos').remove().then(() => {
+        const upd = {};
+        p.forEach(pp => {
+            const k = database.ref(BASE+'/partidos').push().key;
+            upd['partidos/'+k] = pp;
+        });
+        return database.ref(BASE).update(upd);
+    }).then(() => {
+        alert('✅ Calendario de fase de grupos generado con éxito (' + p.length + ' partidos). Los partidos se crearon como "Por Definir". Puedes editarlos en la pestaña de Cronograma Oficial.');
+        switchTab('mod-calendario');
+    }).catch(e => alert('Error al generar calendario: ' + e.message));
 }
 
 // ── CALENDARIO & RESULTADOS ──
