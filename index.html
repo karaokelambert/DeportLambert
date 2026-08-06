@@ -495,12 +495,54 @@ class SupabaseStoreAdapter {
         this.cache = {};
         this.listeners = new Map();
         this.connected = false;
+        this._realtimeChannel = null;
+        this._pollTimer = null;
+        this._reconnectTimer = null;
+        this._reconnectDelay = 2000;  // empieza en 2s
+        this._maxReconnectDelay = 30000; // máximo 30s
         this.init();
     }
 
     async init() {
         await this.fetchAll();
-        setInterval(() => this.fetchAll(), 3000);
+        this._suscribirRealtime();
+        // Polling de respaldo cada 15s (solo por si falla Realtime)
+        this._pollTimer = setInterval(() => this.fetchAll(), 15000);
+    }
+
+    _suscribirRealtime() {
+        if (this._realtimeChannel) {
+            try { _supabase.removeChannel(this._realtimeChannel); } catch(e){}
+        }
+        this._realtimeChannel = _supabase
+            .channel('jlsports_realtime_' + Date.now())
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'jlsports_store' },
+                (payload) => {
+                    // Cambio detectado en tiempo real — sincronizar inmediatamente
+                    this.fetchAll();
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    this._reconnectDelay = 2000; // resetear backoff
+                    console.log('[Realtime] Canal activo — sincronización en tiempo real habilitada');
+                } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                    console.warn('[Realtime] Canal desconectado, reconectando en', this._reconnectDelay / 1000, 's...');
+                    this._programarReconexion();
+                }
+            });
+    }
+
+    _programarReconexion() {
+        if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+        this._reconnectTimer = setTimeout(() => {
+            this.fetchAll().then(() => {
+                this._suscribirRealtime();
+            });
+            // Backoff exponencial
+            this._reconnectDelay = Math.min(this._reconnectDelay * 2, this._maxReconnectDelay);
+        }, this._reconnectDelay);
     }
 
     async fetchAll() {
@@ -529,11 +571,14 @@ class SupabaseStoreAdapter {
     }
 
     notifyConnected(status) {
+        const wasConnected = this.connected;
         this.connected = status;
-        const callbacks = this.listeners.get('.info/connected') || [];
-        callbacks.forEach(cb => {
-            try { cb({ val: () => status }); } catch(e){}
-        });
+        if (wasConnected !== status) {
+            const callbacks = this.listeners.get('.info/connected') || [];
+            callbacks.forEach(cb => {
+                try { cb({ val: () => status }); } catch(e){}
+            });
+        }
     }
 
     getValueAtPath(path) {
@@ -683,7 +728,7 @@ class SupabaseStoreAdapter {
                     .from('jlsports_store')
                     .upsert({ path: topKey, data: topDoc });
                 if (error) console.error("Error guardando en Supabase:", error);
-                await self.fetchAll();
+                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
             },
             async update(updates) {
                 const byTopKey = {};
@@ -709,7 +754,7 @@ class SupabaseStoreAdapter {
                     if (error) console.error("Error al actualizar en Supabase:", error);
                 }
                 self.emitAll();
-                await self.fetchAll();
+                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
             },
             async remove() {
                 const parts = cleanPath.split('/').filter(Boolean);
@@ -738,7 +783,7 @@ class SupabaseStoreAdapter {
                     if (error) console.error("Error al eliminar subruta en Supabase:", error);
                 }
                 self.emitAll();
-                await self.fetchAll();
+                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
             },
             push(value) {
                 const key = '-N' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
@@ -777,14 +822,24 @@ database.ref('.info/connected').on('value', snap => {
     const el = document.getElementById('hub-firebase-status');
     const el2 = document.getElementById('sys-firebase-status');
     if (snap.val()) {
-        const ok = '<i class="fa-solid fa-circle-check" style="color:#4ade80;font-size:.75rem;"></i> Supabase En línea';
+        const ok = '<i class="fa-solid fa-circle-check" style="color:#4ade80;font-size:.75rem;"></i> <span style="color:#4ade80;">En línea · Tiempo Real</span>';
         if (el)  { el.innerHTML = ok; el.style.color = '#4ade80'; }
-        if (el2) el2.innerHTML = '<i class="fa-solid fa-circle-check text-green-400"></i> Supabase En línea';
+        if (el2) el2.innerHTML = '<i class="fa-solid fa-circle-check text-green-400"></i> <span class="text-green-400">En línea · Tiempo Real</span>';
     } else {
-        const wait = '<span class="loader"></span> Reconectando...';
+        const wait = '<span class="loader"></span> <span style="color:#fbbf24">Reconectando...</span>';
         if (el)  { el.innerHTML = wait; el.style.color = '#fbbf24'; }
         if (el2) el2.innerHTML = wait;
     }
+});
+
+// Detectar pérdida/recuperación de conexión de red para reconectar Realtime rápidamente
+window.addEventListener('online', () => {
+    console.log('[Red] Conexión recuperada — reconectando Realtime...');
+    database.fetchAll().then(() => database._suscribirRealtime());
+});
+window.addEventListener('offline', () => {
+    console.warn('[Red] Sin conexión a internet');
+    database.notifyConnected(false);
 });
 
 // ── DEFAULTS ──
