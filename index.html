@@ -1213,16 +1213,20 @@ function vincularListeners() {
         if (!cEq||!cJug) return;
         cEq.innerHTML=''; cJug.innerHTML='';
 
+        let htmlEq = '';
+        let htmlJug = '';
         Object.keys(cacheEquipos).forEach(key => {
             const eq=cacheEquipos[key];
             const logo = eq.logo&&eq.logo.startsWith('data:image') ? `<img src="${eq.logo}" class="w-full h-full object-cover rounded-full">` : (eq.logo?eq.logo.substring(0,3).toUpperCase():'ESC');
             const ac = sessionActual.rol==='Administrador'
                 ? `<div class="mt-3 flex gap-2 justify-end"><button onclick="editarEquipo('${key}','${eq.nombre}','${eq.delegado}','${eq.cedulaDelegado}','${eq.telefono}')" class="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('equipos/${key}')" class="px-2 py-1 bg-red-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-trash"></i></button></div>` : '';
-            cEq.innerHTML += `<div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between text-slate-900"><div class="flex items-center justify-between"><div><h4 class="text-xl font-bold">${eq.nombre}</h4><p class="text-sm text-slate-600 mt-2"><strong>Delegado:</strong> ${eq.delegado}</p><p class="text-xs text-slate-500">CI: ${eq.cedulaDelegado} | Telf: ${eq.telefono}</p></div><div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center font-black text-white text-sm overflow-hidden">${logo}</div></div>${ac}</div>`;
+            htmlEq += `<div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between text-slate-900"><div class="flex items-center justify-between"><div><h4 class="text-xl font-bold">${eq.nombre}</h4><p class="text-sm text-slate-600 mt-2"><strong>Delegado:</strong> ${eq.delegado}</p><p class="text-xs text-slate-500">CI: ${eq.cedulaDelegado} | Telf: ${eq.telefono}</p></div><div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center font-black text-white text-sm overflow-hidden">${logo}</div></div>${ac}</div>`;
 
             if (sessionActual.rol==='Delegado'&&sessionActual.cedula!==eq.cedulaDelegado) return;
-            cJug.innerHTML += `<div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700 text-white"><h3 class="text-lg font-black text-amber-400 mb-3 flex items-center justify-between"><span>${discInfo.emoji} ${eq.nombre}</span><span class="text-xs text-slate-400">Róster Oficial</span></h3><div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-slate-900 text-slate-400 uppercase font-bold"><tr><th class="p-2">Dorsal</th><th class="p-2">Jugador</th><th class="p-2">Cédula</th><th class="p-2 text-center">Acciones</th></tr></thead><tbody id="players-list-${key}"><tr><td colspan="4" class="p-2 text-slate-500">Cargando...</td></tr></tbody></table></div></div>`;
+            htmlJug += `<div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700 text-white"><h3 class="text-lg font-black text-amber-400 mb-3 flex items-center justify-between"><span>${discInfo.emoji} ${eq.nombre}</span><span class="text-xs text-slate-400">Róster Oficial</span></h3><div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-slate-900 text-slate-400 uppercase font-bold"><tr><th class="p-2">Dorsal</th><th class="p-2">Jugador</th><th class="p-2">Cédula</th><th class="p-2 text-center">Acciones</th></tr></thead><tbody id="players-list-${key}"><tr><td colspan="4" class="p-2 text-slate-500">Cargando...</td></tr></tbody></table></div></div>`;
         });
+        cEq.innerHTML = htmlEq;
+        cJug.innerHTML = htmlJug;
         vincularJugadores();
         renderPartidos();
     });
@@ -1370,11 +1374,19 @@ document.getElementById('form-calendario').addEventListener('submit', function(e
 });
 
 function renderPartidos() {
+    if (window.rPartidosListener) {
+        try { window.rPartidosListener.off(); } catch(e){}
+    }
     const rP = ref('partidos');
+    window.rPartidosListener = rP;
+    
     rP.on('value', snap => {
         const cCal=document.getElementById('lista-calendario'), cLiv=document.getElementById('lista-resultados');
         if (!cCal||!cLiv) return;
-        cCal.innerHTML=''; cLiv.innerHTML='';
+        
+        let htmlCal = '';
+        let htmlLiv = '';
+        
         snap.forEach(child => {
             const p=child.val(), key=child.key;
             const pL=p.ptsLocal||0, pV=p.ptsVisita||0;
@@ -1384,12 +1396,16 @@ function renderPartidos() {
             const bClass=p.estado==='Finalizado'?'badge-finalizado':'badge-programado';
             const calAc=sessionActual.rol==='Administrador'?`<button onclick="editarPartido('${key}','${p.local}','${p.visita}','${p.fecha}','${p.hora}','${p.cancha}')" style="padding:5px 10px;background:#2563eb;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('partidos/${key}')" style="padding:5px 10px;background:#dc2626;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash"></i></button>`:'';
             const scoreD=p.estado==='Finalizado'?`<span class="fixture-score-display">${pL} — ${pV}</span>`:'';
-            cCal.innerHTML+=`<div class="fixture-card"><div class="fixture-row"><div class="fixture-logo">${logoL}</div><div class="fixture-center"><div class="fixture-venue"><i class="fa-solid fa-location-dot mr-1"></i>${p.cancha||'Por definir'}</div><div class="fixture-teams">${p.local}<span class="fixture-vs"> vs </span>${p.visita}</div><div class="fixture-datetime"><i class="fa-solid fa-calendar-days mr-1"></i>${p.fecha||'-'} &nbsp;·&nbsp; <i class="fa-solid fa-clock mr-1"></i>${p.hora||'-'}</div></div><div class="fixture-logo">${logoV}</div></div><div class="fixture-footer"><span class="${bClass}">${p.estado}</span>${scoreD}<div style="margin-left:auto;display:flex;gap:6px;">${calAc}</div></div></div>`;
+            htmlCal+=`<div class="fixture-card"><div class="fixture-row"><div class="fixture-logo">${logoL}</div><div class="fixture-center"><div class="fixture-venue"><i class="fa-solid fa-location-dot mr-1"></i>${p.cancha||'Por definir'}</div><div class="fixture-teams">${p.local}<span class="fixture-vs"> vs </span>${p.visita}</div><div class="fixture-datetime"><i class="fa-solid fa-calendar-days mr-1"></i>${p.fecha||'-'} &nbsp;·&nbsp; <i class="fa-solid fa-clock mr-1"></i>${p.hora||'-'}</div></div><div class="fixture-logo">${logoV}</div></div><div class="fixture-footer"><span class="${bClass}">${p.estado}</span>${scoreD}<div style="margin-left:auto;display:flex;gap:6px;">${calAc}</div></div></div>`;
 
             const dis=sessionActual.rol!=='Administrador'?'disabled':'';
             const btnG=sessionActual.rol==='Administrador'?`<div style="padding:10px 16px;border-top:1px solid #334155;background:#172032;"><button onclick="guardarMarcador('${key}')" class="btn-guardar-score"><i class="fa-solid fa-floppy-disk"></i> Guardar Marcador</button></div>`:'';
-            cLiv.innerHTML+=`<div class="lv-card"><div class="lv-body"><div class="lv-venue"><i class="fa-solid fa-location-dot" style="margin-right:3px;"></i>${p.cancha||'Por definir'}</div><div class="lv-row"><div class="lv-team"><span class="lv-name">${p.local}</span><div class="lv-logo">${logoL}</div></div><div class="lv-scores"><div class="lv-inputs"><input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" min="0"><span class="lv-sep">:</span><input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" min="0"></div></div><div class="lv-team"><span class="lv-name">${p.visita}</span><div class="lv-logo">${logoV}</div></div></div><div class="lv-datetime"><i class="fa-solid fa-calendar-days" style="margin-right:3px;"></i>${p.fecha||'-'} · <i class="fa-solid fa-clock" style="margin-right:3px;"></i>${p.hora||'-'}</div></div><div class="lv-footer"><span class="${bClass}">${p.estado}</span></div>${btnG}</div>`;
+            htmlLiv+=`<div class="lv-card"><div class="lv-body"><div class="lv-venue"><i class="fa-solid fa-location-dot" style="margin-right:3px;"></i>${p.cancha||'Por definir'}</div><div class="lv-row"><div class="lv-team"><span class="lv-name">${p.local}</span><div class="lv-logo">${logoL}</div></div><div class="lv-scores"><div class="lv-inputs"><input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" min="0"><span class="lv-sep">:</span><input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" min="0"></div></div><div class="lv-team"><span class="lv-name">${p.visita}</span><div class="lv-logo">${logoV}</div></div></div><div class="lv-datetime"><i class="fa-solid fa-calendar-days" style="margin-right:3px;"></i>${p.fecha||'-'} · <i class="fa-solid fa-clock" style="margin-right:3px;"></i>${p.hora||'-'}</div></div><div class="lv-footer"><span class="${bClass}">${p.estado}</span></div>${btnG}</div>`;
         });
+        
+        cCal.innerHTML = htmlCal;
+        cLiv.innerHTML = htmlLiv;
+        
         recalcularPosiciones();
     });
     if (!activeListeners.includes(rP)) activeListeners.push(rP);
