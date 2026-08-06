@@ -321,7 +321,17 @@
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Logo del Equipo</label><input type="file" id="eq-logo-file" accept="image/*" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-sm text-white"><input type="hidden" id="eq-logo-base64"></div>
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Nombre del Delegado</label><input type="text" id="eq-delegado" required class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Cédula del Delegado</label><input type="text" id="eq-cedula" required class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
-                        <div class="md:col-span-2"><label class="block text-xs font-bold mb-1 text-slate-400">Teléfono</label><input type="text" id="eq-telefono" required class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div><label class="block text-xs font-bold mb-1 text-slate-400">Teléfono</label><input type="text" id="eq-telefono" required class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500"></div>
+                        <div>
+                            <label class="block text-xs font-bold mb-1 text-slate-400">Grupo asignado</label>
+                            <select id="eq-grupo" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                                <option value="">Ninguno (Liga Regular)</option>
+                                <option value="A">Grupo A</option>
+                                <option value="B">Grupo B</option>
+                                <option value="C">Grupo C</option>
+                                <option value="D">Grupo D</option>
+                            </select>
+                        </div>
                         <button type="submit" id="btn-submit-team" class="md:col-span-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-sm transition">Inscribir Club</button>
                     </form>
                     <div id="lista-equipos" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-800"></div>
@@ -351,9 +361,7 @@
                         <label class="block text-xs font-bold uppercase text-slate-400 mb-2">Selecciona el Formato del Campeonato</label>
                         <select id="formato-torneo-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-purple-500">
                             <option value="todos">Todos contra todos (Liga Regular)</option>
-                            <option value="todos-sm-fi">Todos contra todos (Semifinal y Final)</option>
-                            <option value="grupos-cl-ed">Por Grupos (A,B,C,D) Clasificación y Eliminación Directa</option>
-                            <option value="directa">Eliminación Directa</option>
+                            <option value="grupos">Por Grupos (A, B, C, D)</option>
                         </select>
                         <button onclick="guardarConfigFormato()" class="mt-4 w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-sm transition">Establecer Estructura de Competencia</button>
                     </div>
@@ -1218,9 +1226,11 @@ function vincularListeners() {
         Object.keys(cacheEquipos).forEach(key => {
             const eq=cacheEquipos[key];
             const logo = eq.logo&&eq.logo.startsWith('data:image') ? `<img src="${eq.logo}" class="w-full h-full object-cover rounded-full">` : (eq.logo?eq.logo.substring(0,3).toUpperCase():'ESC');
+            const eqGrupoStr = eq.grupo || '';
+            const tagGrupo = eq.grupo ? `<span class="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">GRUPO ${eq.grupo}</span>` : '';
             const ac = sessionActual.rol==='Administrador'
-                ? `<div class="mt-3 flex gap-2 justify-end"><button onclick="editarEquipo('${key}','${eq.nombre}','${eq.delegado}','${eq.cedulaDelegado}','${eq.telefono}')" class="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('equipos/${key}')" class="px-2 py-1 bg-red-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-trash"></i></button></div>` : '';
-            htmlEq += `<div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between text-slate-900"><div class="flex items-center justify-between"><div><h4 class="text-xl font-bold">${eq.nombre}</h4><p class="text-sm text-slate-600 mt-2"><strong>Delegado:</strong> ${eq.delegado}</p><p class="text-xs text-slate-500">CI: ${eq.cedulaDelegado} | Telf: ${eq.telefono}</p></div><div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center font-black text-white text-sm overflow-hidden">${logo}</div></div>${ac}</div>`;
+                ? `<div class="mt-3 flex gap-2 justify-end"><button onclick="editarEquipo('${key}','${eq.nombre}','${eq.delegado}','${eq.cedulaDelegado}','${eq.telefono}','${eqGrupoStr}')" class="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('equipos/${key}')" class="px-2 py-1 bg-red-600 text-white rounded text-xs font-bold"><i class="fa-solid fa-trash"></i></button></div>` : '';
+            htmlEq += `<div class="bg-white p-5 rounded-xl border border-slate-300 shadow-sm flex flex-col justify-between text-slate-900"><div class="flex items-center justify-between"><div><h4 class="text-xl font-bold flex items-center">${eq.nombre}${tagGrupo}</h4><p class="text-sm text-slate-600 mt-2"><strong>Delegado:</strong> ${eq.delegado}</p><p class="text-xs text-slate-500">CI: ${eq.cedulaDelegado} | Telf: ${eq.telefono}</p></div><div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center font-black text-white text-sm overflow-hidden">${logo}</div></div>${ac}</div>`;
 
             if (sessionActual.rol==='Delegado'&&sessionActual.cedula!==eq.cedulaDelegado) return;
             htmlJug += `<div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700 text-white"><h3 class="text-lg font-black text-amber-400 mb-3 flex items-center justify-between"><span>${discInfo.emoji} ${eq.nombre}</span><span class="text-xs text-slate-400">Róster Oficial</span></h3><div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-slate-900 text-slate-400 uppercase font-bold"><tr><th class="p-2">Dorsal</th><th class="p-2">Jugador</th><th class="p-2">Cédula</th><th class="p-2 text-center">Acciones</th></tr></thead><tbody id="players-list-${key}"><tr><td colspan="4" class="p-2 text-slate-500">Cargando...</td></tr></tbody></table></div></div>`;
@@ -1263,17 +1273,32 @@ document.getElementById('form-equipo').addEventListener('submit', function(e) {
     if (sessionActual.rol!=='Administrador') { alert('Solo el Administrador puede gestionar equipos.'); return; }
     const cDel=document.getElementById('eq-cedula').value.trim(), editId=document.getElementById('edit-eq-id').value;
     const logo=document.getElementById('eq-logo-base64').value||'ESC';
-    const payload={nombre:document.getElementById('eq-nombre').value,logo,delegado:document.getElementById('eq-delegado').value,cedulaDelegado:cDel,telefono:document.getElementById('eq-telefono').value};
-    ref('equipos/'+(editId||cDel)).set(payload).then(()=>{ alert('¡Equipo guardado!'); this.reset(); document.getElementById('edit-eq-id').value=''; document.getElementById('eq-logo-base64').value=''; document.getElementById('btn-submit-team').innerText='Inscribir Club'; }).catch(err=>alert('Error: '+err.message));
+    const payload={
+        nombre:document.getElementById('eq-nombre').value,
+        logo,
+        delegado:document.getElementById('eq-delegado').value,
+        cedulaDelegado:cDel,
+        telefono:document.getElementById('eq-telefono').value,
+        grupo:document.getElementById('eq-grupo').value
+    };
+    ref('equipos/'+(editId||cDel)).set(payload).then(()=>{ 
+        alert('¡Equipo guardado!'); 
+        this.reset(); 
+        document.getElementById('edit-eq-id').value=''; 
+        document.getElementById('eq-logo-base64').value=''; 
+        document.getElementById('eq-grupo').value='';
+        document.getElementById('btn-submit-team').innerText='Inscribir Club'; 
+    }).catch(err=>alert('Error: '+err.message));
 });
 
-function editarEquipo(id,nombre,delegado,cedula,telefono) {
+function editarEquipo(id,nombre,delegado,cedula,telefono,grupo) {
     if (sessionActual.rol!=='Administrador') { alert('Acceso denegado.'); return; }
     document.getElementById('edit-eq-id').value=id;
     document.getElementById('eq-nombre').value=nombre;
     document.getElementById('eq-delegado').value=delegado;
     document.getElementById('eq-cedula').value=cedula;
     document.getElementById('eq-telefono').value=telefono;
+    document.getElementById('eq-grupo').value=grupo || '';
     document.getElementById('eq-logo-base64').value='';
     document.getElementById('btn-submit-team').innerText='Modificar Club';
     window.scrollTo({top:0,behavior:'smooth'});
@@ -1327,35 +1352,12 @@ function resetJugadoresForm() { document.getElementById('edit-player-id').value=
 function guardarConfigFormato() {
     if (sessionActual.rol!=='Administrador') { alert('Acceso denegado.'); return; }
     const fmt=document.getElementById('formato-torneo-select').value;
-    const lista=Object.values(cacheEquipos);
-    if (lista.length<2) { alert('Inscribe al menos 2 equipos primero.'); return; }
-    ref('partidos').once('value', snap => {
-        const hay=snap.exists()&&snap.numChildren()>0;
-        const msg=hay?'Ya existe un calendario con '+snap.numChildren()+' partido(s). ¿Reemplazar?':'¿Generar calendario para '+lista.length+' equipos?';
-        if (!confirm(msg)) return;
-        const limpiar=hay?ref('partidos').remove():Promise.resolve();
-        limpiar.then(()=>ref('configuracion/formato').set(fmt)).then(()=>generarCalendarioAuto(fmt,lista)).catch(err=>alert('Error: '+err.message));
+    
+    ref('configuracion/formato').set(fmt).then(() => {
+        alert('Configuración guardada exitosamente.');
+    }).catch(err => {
+        alert('Error al guardar formato: ' + err.message);
     });
-}
-
-function generarCalendarioAuto(fmt, lista) {
-    const n=lista.length; let p=[];
-    if (fmt==='todos'||fmt==='todos-sm-fi') {
-        for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) p.push({local:lista[i].nombre,visita:lista[j].nombre,fecha:'',hora:'',cancha:'',ptsLocal:0,ptsVisita:0,estado:'Programado'});
-        if (fmt==='todos-sm-fi') { p.push({local:'SF1 — Equipo A',visita:'SF1 — Equipo B',fecha:'',hora:'',cancha:'Por Definir',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Semifinal'}); p.push({local:'Final — Ganador SF1',visita:'Final — Ganador SF2',fecha:'',hora:'',cancha:'Por Definir',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Final'}); }
-    } else if (fmt==='directa') {
-        for (let i=0;i<n-1;i+=2) p.push({local:lista[i].nombre,visita:lista[i+1].nombre,fecha:'',hora:'',cancha:'Ronda 1',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Eliminatoria'});
-        p.push({local:'Final — Ganador SF1',visita:'Final — Ganador SF2',fecha:'',hora:'',cancha:'Por Definir',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Final'});
-    } else if (fmt==='grupos-cl-ed') {
-        const m=Math.ceil(n/2), gA=lista.slice(0,m), gB=lista.slice(m);
-        for (let i=0;i<gA.length;i++) for (let j=i+1;j<gA.length;j++) p.push({local:gA[i].nombre,visita:gA[j].nombre,fecha:'',hora:'',cancha:'Grupo A',ptsLocal:0,ptsVisita:0,estado:'Programado',grupo:'A'});
-        for (let i=0;i<gB.length;i++) for (let j=i+1;j<gB.length;j++) p.push({local:gB[i].nombre,visita:gB[j].nombre,fecha:'',hora:'',cancha:'Grupo B',ptsLocal:0,ptsVisita:0,estado:'Programado',grupo:'B'});
-        p.push({local:'1° Grupo A',visita:'2° Grupo B',fecha:'',hora:'',cancha:'Semifinal',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Semifinal'});
-        p.push({local:'Ganador SF1',visita:'Ganador SF2',fecha:'',hora:'',cancha:'Final',ptsLocal:0,ptsVisita:0,estado:'Programado',tipo:'Final'});
-    }
-    const upd={};
-    p.forEach(pp => { const k=database.ref(BASE+'/partidos').push().key; upd[BASE+'/partidos/'+k]=pp; });
-    database.ref().update(upd).then(()=>{ alert('✅ Calendario generado: '+p.length+' partido(s).'); switchTab('mod-calendario'); }).catch(err=>alert('Error: '+err.message));
 }
 
 // ── CALENDARIO & RESULTADOS ──
@@ -1442,28 +1444,21 @@ function recalcularPosiciones() {
     });
 
     ref('partidos').once('value', snap => {
-        // tablaGrupos: { 'A': { 'NombreEquipo': {jj,jg,jp,cf,cc,pts} }, ... }
-        // tablaGeneral: para cuando no hay grupos
         const tablaGrupos = {};
         const tablaGeneral = {};
-        let tieneGrupos = false;
+        const tieneGrupos = window.formatoActualId === 'grupos';
 
-        // Inicializar todos los equipos en su tabla
-        snap.forEach(child => {
-            const p = child.val();
-            if (p.grupo) {
-                tieneGrupos = true;
-                const g = p.grupo;
-                if (!tablaGrupos[g]) tablaGrupos[g] = {};
-                [p.local, p.visita].forEach(nombre => {
-                    if (nombre && !tablaGrupos[g][nombre])
-                        tablaGrupos[g][nombre] = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
-                });
-            }
-        });
-
-        // Si no hay grupos detectados por partidos, inicializar tabla general
-        if (!tieneGrupos) {
+        if (tieneGrupos) {
+            // Inicializar equipos en sus respectivos grupos basándose en la configuración manual
+            Object.values(cacheEquipos).forEach(e => {
+                if (e.grupo) {
+                    const g = e.grupo;
+                    if (!tablaGrupos[g]) tablaGrupos[g] = {};
+                    tablaGrupos[g][e.nombre] = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
+                }
+            });
+        } else {
+            // Inicializar tabla general
             Object.values(cacheEquipos).forEach(e => {
                 tablaGeneral[e.nombre] = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
             });
@@ -1476,30 +1471,39 @@ function recalcularPosiciones() {
             const pL = parseInt(p.ptsLocal)  || 0;
             const pV = parseInt(p.ptsVisita) || 0;
 
-            if (tieneGrupos && p.grupo) {
-                const g = p.grupo;
-                const tb = tablaGrupos[g];
-                if (!tb || !tb[p.local] || !tb[p.visita]) return;
-                tb[p.local].jj++;  tb[p.visita].jj++;
-                tb[p.local].cf  += pL; tb[p.local].cc  += pV;
-                tb[p.visita].cf += pV; tb[p.visita].cc += pL;
-                if (pL > pV) {
-                    tb[p.local].jg++;  tb[p.local].pts  += 2;
-                    tb[p.visita].jp++; tb[p.visita].pts += 1;
-                } else {
-                    tb[p.visita].jg++; tb[p.visita].pts += 2;
-                    tb[p.local].jp++;  tb[p.local].pts  += 1;
+            if (tieneGrupos) {
+                const gL = equipoGrupo[p.local];
+                const gV = equipoGrupo[p.visita];
+                
+                // Solo si ambos equipos pertenecen al mismo grupo (y tienen uno), sumamos a ese grupo.
+                if (gL && gV && gL === gV) {
+                    const g = gL;
+                    const tb = tablaGrupos[g];
+                    if (!tb || !tb[p.local] || !tb[p.visita]) return;
+                    
+                    tb[p.local].jj++;  tb[p.visita].jj++;
+                    tb[p.local].cf  += pL; tb[p.local].cc  += pV;
+                    tb[p.visita].cf += pV; tb[p.visita].cc += pL;
+                    if (pL > pV) {
+                        tb[p.local].jg++;  tb[p.local].pts  += 2;
+                        tb[p.visita].jp++; tb[p.visita].pts += 1;
+                    } else if (pV > pL) {
+                        tb[p.visita].jg++; tb[p.visita].pts += 2;
+                        tb[p.local].jp++;  tb[p.local].pts  += 1;
+                    }
                 }
-            } else if (!tieneGrupos && tablaGeneral[p.local] && tablaGeneral[p.visita]) {
-                tablaGeneral[p.local].jj++;  tablaGeneral[p.visita].jj++;
-                tablaGeneral[p.local].cf  += pL; tablaGeneral[p.local].cc  += pV;
-                tablaGeneral[p.visita].cf += pV; tablaGeneral[p.visita].cc += pL;
-                if (pL > pV) {
-                    tablaGeneral[p.local].jg++;  tablaGeneral[p.local].pts  += 2;
-                    tablaGeneral[p.visita].jp++; tablaGeneral[p.visita].pts += 1;
-                } else {
-                    tablaGeneral[p.visita].jg++; tablaGeneral[p.visita].pts += 2;
-                    tablaGeneral[p.local].jp++;  tablaGeneral[p.local].pts  += 1;
+            } else {
+                if (tablaGeneral[p.local] && tablaGeneral[p.visita]) {
+                    tablaGeneral[p.local].jj++;  tablaGeneral[p.visita].jj++;
+                    tablaGeneral[p.local].cf  += pL; tablaGeneral[p.local].cc  += pV;
+                    tablaGeneral[p.visita].cf += pV; tablaGeneral[p.visita].cc += pL;
+                    if (pL > pV) {
+                        tablaGeneral[p.local].jg++;  tablaGeneral[p.local].pts  += 2;
+                        tablaGeneral[p.visita].jp++; tablaGeneral[p.visita].pts += 1;
+                    } else if (pV > pL) {
+                        tablaGeneral[p.visita].jg++; tablaGeneral[p.visita].pts += 2;
+                        tablaGeneral[p.local].jp++;  tablaGeneral[p.local].pts  += 1;
+                    }
                 }
             }
         });
