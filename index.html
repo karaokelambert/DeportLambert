@@ -503,11 +503,11 @@ class SupabaseStoreAdapter {
         this.init();
     }
 
-    async init() {
-        await this.fetchAll();
+    init() {
         this._suscribirRealtime();
-        // Polling de respaldo cada 15s (solo por si falla Realtime)
-        this._pollTimer = setInterval(() => this.fetchAll(), 15000);
+        this.fetchAll();
+        // Polling de respaldo cada 60s (solo por si falla Realtime o Broadcast)
+        this._pollTimer = setInterval(() => this.fetchAll(), 60000);
     }
 
     _suscribirRealtime() {
@@ -515,14 +515,40 @@ class SupabaseStoreAdapter {
             try { _supabase.removeChannel(this._realtimeChannel); } catch(e){}
         }
         this._realtimeChannel = _supabase
-            .channel('jlsports_realtime_' + Date.now())
+            .channel('jlsports_shared_channel') // Canal compartido para todos los clientes
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'jlsports_store' },
                 (payload) => {
-                    // Cambio detectado en tiempo real — sincronizar inmediatamente
-                    this.fetchAll();
+                    // Cambio detectado por base de datos
+                    if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        if (payload.new && payload.new.path) {
+                            this.cache[payload.new.path] = payload.new.data;
+                            this.emitAll();
+                        }
+                    } else if (payload.eventType === 'DELETE') {
+                        if (payload.old && payload.old.path) {
+                            delete this.cache[payload.old.path];
+                            this.emitAll();
+                        } else {
+                            this.cache = {};
+                            this.emitAll();
+                        }
+                    } else {
+                        this.fetchAll();
+                    }
                 }
             )
+            .on('broadcast', { event: 'db_update' }, ({ payload }) => {
+                // Sincronización instantánea P2P (antes de que la DB confirme)
+                if (payload.action === 'UPSERT') {
+                    this.cache[payload.path] = payload.data;
+                    this.emitAll();
+                } else if (payload.action === 'DELETE') {
+                    if (payload.path) delete this.cache[payload.path];
+                    else this.cache = {};
+                    this.emitAll();
+                }
+            })
             .subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     this._reconnectDelay = 2000; // resetear backoff
@@ -728,7 +754,14 @@ class SupabaseStoreAdapter {
                     .from('jlsports_store')
                     .upsert({ path: topKey, data: topDoc });
                 if (error) console.error("Error guardando en Supabase:", error);
-                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
+                if (self._realtimeChannel) {
+                    self._realtimeChannel.send({
+                        type: 'broadcast',
+                        event: 'db_update',
+                        payload: { action: 'UPSERT', path: topKey, data: topDoc }
+                    }).catch(e => console.warn(e));
+                }
+                // No llamar fetchAll() — Realtime/Broadcast lo detectará y actualizará automáticamente
             },
             async update(updates) {
                 const byTopKey = {};
@@ -752,9 +785,16 @@ class SupabaseStoreAdapter {
                         .from('jlsports_store')
                         .upsert({ path: topKey, data: doc });
                     if (error) console.error("Error al actualizar en Supabase:", error);
+                    if (self._realtimeChannel) {
+                        self._realtimeChannel.send({
+                            type: 'broadcast',
+                            event: 'db_update',
+                            payload: { action: 'UPSERT', path: topKey, data: doc }
+                        }).catch(e => console.warn(e));
+                    }
                 }
                 self.emitAll();
-                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
+                // No llamar fetchAll() — Realtime/Broadcast lo detectará y actualizará automáticamente
             },
             async remove() {
                 const parts = cleanPath.split('/').filter(Boolean);
@@ -765,6 +805,13 @@ class SupabaseStoreAdapter {
                         .delete()
                         .neq('path', '');
                     if (error) console.error("Error al limpiar base de datos en Supabase:", error);
+                    if (self._realtimeChannel) {
+                        self._realtimeChannel.send({
+                            type: 'broadcast',
+                            event: 'db_update',
+                            payload: { action: 'DELETE', path: null }
+                        }).catch(e => console.warn(e));
+                    }
                 } else if (parts.length === 1) {
                     delete self.cache[parts[0]];
                     const { error } = await _supabase
@@ -772,6 +819,13 @@ class SupabaseStoreAdapter {
                         .delete()
                         .eq('path', parts[0]);
                     if (error) console.error("Error al eliminar ruta en Supabase:", error);
+                    if (self._realtimeChannel) {
+                        self._realtimeChannel.send({
+                            type: 'broadcast',
+                            event: 'db_update',
+                            payload: { action: 'DELETE', path: parts[0] }
+                        }).catch(e => console.warn(e));
+                    }
                 } else {
                     const topKey = parts[0];
                     let topDoc = self.cache[topKey] ? JSON.parse(JSON.stringify(self.cache[topKey])) : {};
@@ -781,9 +835,16 @@ class SupabaseStoreAdapter {
                         .from('jlsports_store')
                         .upsert({ path: topKey, data: topDoc });
                     if (error) console.error("Error al eliminar subruta en Supabase:", error);
+                    if (self._realtimeChannel) {
+                        self._realtimeChannel.send({
+                            type: 'broadcast',
+                            event: 'db_update',
+                            payload: { action: 'UPSERT', path: topKey, data: topDoc }
+                        }).catch(e => console.warn(e));
+                    }
                 }
                 self.emitAll();
-                // No llamar fetchAll() — Realtime lo detectará y actualizará automáticamente
+                // No llamar fetchAll() — Realtime/Broadcast lo detectará y actualizará automáticamente
             },
             push(value) {
                 const key = '-N' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
