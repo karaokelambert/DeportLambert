@@ -1195,8 +1195,22 @@ function vincularListeners() {
 
     // Formato
     const rFmt = ref('configuracion/formato');
-    const fmtMap = { todos:'Todos contra todos (Liga Regular)', 'todos-sm-fi':'Todos contra todos + Semifinal y Final', 'grupos-cl-ed':'Por Grupos — Clasificación y Eliminación', directa:'Eliminación Directa' };
-    rFmt.on('value', snap => { const el=document.getElementById('formato-actual-label'); if(el) el.innerText=fmtMap[snap.val()]||'No Definido'; });
+    const fmtMap = { todos:'Todos contra todos (Liga Regular)', grupos:'Por Grupos (A, B, C, D)' };
+    window.formatoActualId = '';
+    rFmt.on('value', snap => {
+        window.formatoActualId = snap.val() || '';
+        const el = document.getElementById('formato-actual-label');
+        if (el) el.innerText = fmtMap[window.formatoActualId] || 'No Definido';
+        const zona = document.getElementById('asignacion-grupos-zona');
+        if (zona) {
+            if (window.formatoActualId === 'grupos' && sessionActual && sessionActual.rol === 'Administrador') {
+                zona.classList.remove('hidden');
+                if (typeof renderizarAsignacionGrupos === 'function') renderizarAsignacionGrupos();
+            } else {
+                zona.classList.add('hidden');
+            }
+        }
+    });
     activeListeners.push(rFmt);
 
     // Usuarios
