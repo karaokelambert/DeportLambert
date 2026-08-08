@@ -1585,10 +1585,70 @@ function renderPartidos() {
                 const btnG = sessionActual.rol==='Administrador'
                     ? `<div style="padding:10px 16px;border-top:1px solid #334155;background:#172032;"><button onclick="guardarMarcador('${key}')" class="btn-guardar-score"><i class="fa-solid fa-floppy-disk"></i> Guardar Marcador</button></div>`
                     : '';
-                const faseBadge = p.fase === 'Tercios de Final'
-                    ? `<span style="background:rgba(168,85,247,.2);color:#c084fc;border:1px solid rgba(168,85,247,.4);border-radius:4px;padding:1px 6px;font-size:.6rem;font-weight:800;text-transform:uppercase;display:block;text-align:center;margin-bottom:4px;">${p.fase}</span>`
+                const faseBadge = p.fase && p.fase !== 'Ronda Regular'
+                    ? `<span style="background:rgba(168,85,247,.2);color:#c084fc;border:1px solid rgba(168,85,247,.4);border-radius:4px;padding:2px 8px;font-size:.65rem;font-weight:900;text-transform:uppercase;margin-left:8px;">${p.fase}</span>`
                     : '';
-                htmlLiv += `<div class="lv-card"><div class="lv-body">${faseBadge}<div class="lv-venue"><i class="fa-solid fa-location-dot" style="margin-right:3px;"></i>${p.cancha||'Por definir'}</div><div class="lv-row"><div class="lv-team"><span class="lv-name">${p.local}</span><div class="lv-logo">${logoL}</div></div><div class="lv-scores"><div class="lv-inputs"><input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" min="0"><span class="lv-sep">:</span><input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" min="0"></div></div><div class="lv-team"><span class="lv-name">${p.visita}</span><div class="lv-logo">${logoV}</div></div></div><div class="lv-datetime"><i class="fa-solid fa-calendar-days" style="margin-right:3px;"></i>${p.fecha||'-'} · <i class="fa-solid fa-clock" style="margin-right:3px;"></i>${p.hora||'-'}</div></div><div class="lv-footer"><span class="${bClass}">${p.estado}</span></div>${btnG}</div>`;
+
+                const isBaloncesto = discInfo.nombre.toLowerCase().includes('baloncesto');
+                const isFutbol = discInfo.nombre.toLowerCase().includes('fútbol') || discInfo.nombre.toLowerCase().includes('futbol') || discInfo.nombre.toLowerCase().includes('futsal');
+
+                let partialsHtml = '';
+                if (isBaloncesto) {
+                    partialsHtml = `
+                    <div style="background:rgba(0,0,0,.15); border-top:1px solid #334155; padding:10px; display:flex; justify-content:space-around; align-items:center;">
+                        ${[1,2,3,4].map(q => `
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                            <span style="font-size:0.65rem; color:#94a3b8; font-weight:800; text-transform:uppercase; letter-spacing:1px;">Q${q}</span>
+                            <div style="display:flex; gap:3px; align-items:center;">
+                                <input type="number" id="q${q}-L-${key}" value="${p['q'+q+'L']!==undefined?p['q'+q+'L']:''}" ${dis} class="lv-score-box" style="width:34px; height:34px; font-size:.9rem; border:1px solid #475569; border-radius:4px;" oninput="window.calcGlobal('${key}')" placeholder="-">
+                                <span style="color:#64748b; font-size:.7rem;">-</span>
+                                <input type="number" id="q${q}-V-${key}" value="${p['q'+q+'V']!==undefined?p['q'+q+'V']:''}" ${dis} class="lv-score-box" style="width:34px; height:34px; font-size:.9rem; border:1px solid #475569; border-radius:4px;" oninput="window.calcGlobal('${key}')" placeholder="-">
+                            </div>
+                        </div>`).join('')}
+                    </div>`;
+                } else if (isFutbol) {
+                    partialsHtml = `
+                    <div style="background:rgba(0,0,0,.15); border-top:1px solid #334155; padding:10px; display:flex; justify-content:space-around; align-items:center;">
+                        ${[1,2].map(t => `
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                            <span style="font-size:0.65rem; color:#94a3b8; font-weight:800; text-transform:uppercase; letter-spacing:1px;">${t}T</span>
+                            <div style="display:flex; gap:3px; align-items:center;">
+                                <input type="number" id="t${t}-L-${key}" value="${p['t'+t+'L']!==undefined?p['t'+t+'L']:''}" ${dis} class="lv-score-box" style="width:34px; height:34px; font-size:.9rem; border:1px solid #475569; border-radius:4px;" oninput="window.calcGlobal('${key}')" placeholder="-">
+                                <span style="color:#64748b; font-size:.7rem;">-</span>
+                                <input type="number" id="t${t}-V-${key}" value="${p['t'+t+'V']!==undefined?p['t'+t+'V']:''}" ${dis} class="lv-score-box" style="width:34px; height:34px; font-size:.9rem; border:1px solid #475569; border-radius:4px;" oninput="window.calcGlobal('${key}')" placeholder="-">
+                            </div>
+                        </div>`).join('')}
+                    </div>`;
+                }
+
+                const evFn = (isBaloncesto||isFutbol) ? `oninput="window.calcPartial('${key}', 'L')"` : '';
+                const evFnV = (isBaloncesto||isFutbol) ? `oninput="window.calcPartial('${key}', 'V')"` : '';
+
+                htmlLiv += `
+                <div class="lv-card" style="box-shadow:0 8px 30px rgba(0,0,0,.3); border:1px solid #334155;">
+                    <div class="lv-body" style="padding:14px;">
+                        <div style="display:flex; justify-content:center; align-items:center; margin-bottom:16px;">
+                            <span class="${bClass}">${p.estado}</span>
+                            ${faseBadge}
+                        </div>
+                        <div class="lv-row" style="margin-bottom:14px; gap:8px;">
+                            <div class="lv-team"><div class="lv-logo" style="width:64px; height:64px; font-size:1.9rem;">${logoL}</div><span class="lv-name" style="margin-top:6px; font-size:.85rem;">${p.local}</span></div>
+                            
+                            <div class="lv-scores" style="padding-top:0;">
+                                <div class="lv-inputs">
+                                    <input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6;" min="0" ${evFn}>
+                                    <span class="lv-sep" style="font-size:1.8rem; margin:0 4px;">:</span>
+                                    <input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6;" min="0" ${evFnV}>
+                                </div>
+                            </div>
+                            
+                            <div class="lv-team"><div class="lv-logo" style="width:64px; height:64px; font-size:1.9rem;">${logoV}</div><span class="lv-name" style="margin-top:6px; font-size:.85rem;">${p.visita}</span></div>
+                        </div>
+                        <div class="lv-datetime" style="font-weight:600;"><i class="fa-solid fa-location-dot" style="margin-right:4px;"></i>${p.cancha||'Por definir'} &nbsp;&middot;&nbsp; <i class="fa-solid fa-calendar-days" style="margin-right:4px;"></i>${p.fecha||'-'} &nbsp;&middot;&nbsp; <i class="fa-solid fa-clock" style="margin-right:4px;"></i>${p.hora||'-'}</div>
+                    </div>
+                    ${partialsHtml}
+                    ${btnG}
+                </div>`;
             });
         }
 
@@ -1598,15 +1658,88 @@ function renderPartidos() {
     if (!activeListeners.includes(rP)) activeListeners.push(rP);
 }
 
+window.calcGlobal = function(key) {
+    const isB = discInfo.nombre.toLowerCase().includes('baloncesto');
+    const isF = discInfo.nombre.toLowerCase().includes('fútbol') || discInfo.nombre.toLowerCase().includes('futbol') || discInfo.nombre.toLowerCase().includes('futsal');
+    
+    ['L', 'V'].forEach(side => {
+        let sum = 0;
+        let prefix = isB ? 'q' : 't';
+        let max = isB ? 4 : 2;
+        for (let i = 1; i <= max; i++) {
+            const el = document.getElementById(`${prefix}${i}-${side}-${key}`);
+            if (el && el.value !== '') {
+                sum += parseInt(el.value) || 0;
+            }
+        }
+        const globalEl = document.getElementById(`score-${side}-${key}`);
+        if (globalEl) globalEl.value = sum;
+    });
+};
+
+window.calcPartial = function(key, side) {
+    const isB = discInfo.nombre.toLowerCase().includes('baloncesto');
+    const isF = discInfo.nombre.toLowerCase().includes('fútbol') || discInfo.nombre.toLowerCase().includes('futbol') || discInfo.nombre.toLowerCase().includes('futsal');
+    
+    const globalEl = document.getElementById(`score-${side}-${key}`);
+    if (!globalEl) return;
+    const globalVal = parseInt(globalEl.value) || 0;
+    
+    const prefix = isB ? 'q' : 't';
+    const maxP = isB ? 4 : 2;
+    
+    // Find active period: the LAST filled one. If all empty, start at 1.
+    let activeP = 1;
+    for (let i = maxP; i >= 1; i--) {
+        const el = document.getElementById(`${prefix}${i}-${side}-${key}`);
+        if (el && el.value !== '') {
+            activeP = i;
+            break;
+        }
+    }
+    
+    // Sum previous periods
+    let sumPrev = 0;
+    for (let i = 1; i < activeP; i++) {
+        const el = document.getElementById(`${prefix}${i}-${side}-${key}`);
+        if (el && el.value !== '') {
+            sumPrev += parseInt(el.value) || 0;
+        }
+    }
+    
+    const diff = globalVal - sumPrev;
+    const targetEl = document.getElementById(`${prefix}${activeP}-${side}-${key}`);
+    if (targetEl) targetEl.value = diff >= 0 ? diff : 0;
+};
+
 function guardarMarcador(id) {
     if (sessionActual.rol!=='Administrador') { alert('Acceso denegado.'); return; }
-    // BUGFIX: Capturar valores ANTES de la operación asíncrona para evitar
-    // que el re-renderizado del listener sobreescriba los inputs del DOM.
+    const isB = discInfo.nombre.toLowerCase().includes('baloncesto');
+    const isF = discInfo.nombre.toLowerCase().includes('fútbol') || discInfo.nombre.toLowerCase().includes('futbol') || discInfo.nombre.toLowerCase().includes('futsal');
+
     const inputL = document.getElementById('score-L-'+id);
     const inputV = document.getElementById('score-V-'+id);
     const sL = parseInt(inputL ? inputL.value : 0) || 0;
     const sV = parseInt(inputV ? inputV.value : 0) || 0;
+    
     const payload = { ptsLocal: sL, ptsVisita: sV, estado: 'Finalizado' };
+    
+    if (isB) {
+        for (let i=1; i<=4; i++) {
+            const vL = document.getElementById(`q${i}-L-${id}`);
+            const vV = document.getElementById(`q${i}-V-${id}`);
+            if (vL && vL.value !== '') payload[`q${i}L`] = parseInt(vL.value);
+            if (vV && vV.value !== '') payload[`q${i}V`] = parseInt(vV.value);
+        }
+    } else if (isF) {
+        for (let i=1; i<=2; i++) {
+            const vL = document.getElementById(`t${i}-L-${id}`);
+            const vV = document.getElementById(`t${i}-V-${id}`);
+            if (vL && vL.value !== '') payload[`t${i}L`] = parseInt(vL.value);
+            if (vV && vV.value !== '') payload[`t${i}V`] = parseInt(vV.value);
+        }
+    }
+
     ref('partidos/'+id).update(payload)
         .then(() => alert('¡Marcador guardado: ' + sL + ' - ' + sV + '!'))
         .catch(err => alert('Error: '+err.message));
