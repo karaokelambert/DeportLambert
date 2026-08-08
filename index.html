@@ -387,9 +387,10 @@
                         <input type="hidden" id="edit-match-id">
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Equipo Local</label><select id="cal-local-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></select></div>
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Equipo Visitante</label><select id="cal-visita-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></select></div>
+                        <div><label class="block text-xs font-bold mb-1 text-slate-400">Fase del Torneo</label><select id="cal-fase-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"><option value="Ronda Regular">Ronda Regular</option><option value="Tercios de Final">Tercios de Final</option></select></div>
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Fecha</label><input type="text" id="cal-fecha" placeholder="Ej: 18/06/2026" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></div>
                         <div><label class="block text-xs font-bold mb-1 text-slate-400">Hora</label><input type="text" id="cal-hora" placeholder="Ej: 2:00 PM" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></div>
-                        <div class="md:col-span-2"><label class="block text-xs font-bold mb-1 text-slate-400">Sede / Cancha</label><input type="text" id="cal-cancha" placeholder="Ej: Cancha Principal" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></div>
+                        <div><label class="block text-xs font-bold mb-1 text-slate-400">Sede / Cancha</label><input type="text" id="cal-cancha" placeholder="Ej: Cancha Principal" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-white"></div>
                         <button type="submit" id="btn-submit-match" class="md:col-span-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition">Agendar Partido</button>
                     </form>
                     <div id="pdf-calendario"><div id="lista-calendario" class="space-y-3"></div></div>
@@ -1480,8 +1481,16 @@ document.getElementById('form-calendario').addEventListener('submit', function(e
     e.preventDefault();
     if (sessionActual.rol!=='Administrador') { alert('Acceso denegado.'); return; }
     const editId=document.getElementById('edit-match-id').value;
-    const payload={local:document.getElementById('cal-local-select').value,visita:document.getElementById('cal-visita-select').value,fecha:document.getElementById('cal-fecha').value.trim(),hora:document.getElementById('cal-hora').value.trim(),cancha:document.getElementById('cal-cancha').value.trim()};
-    if (payload.local===payload.visita) { alert('Un club no puede jugar contra sí mismo.'); return; }
+    const faseVal = document.getElementById('cal-fase-select').value || 'Ronda Regular';
+    const payload={
+        local:   document.getElementById('cal-local-select').value,
+        visita:  document.getElementById('cal-visita-select').value,
+        fase:    faseVal,
+        fecha:   document.getElementById('cal-fecha').value.trim(),
+        hora:    document.getElementById('cal-hora').value.trim(),
+        cancha:  document.getElementById('cal-cancha').value.trim()
+    };
+    if (payload.local===payload.visita) { alert('Un club no puede jugar contra s\u00ed mismo.'); return; }
     if (editId) {
         ref('partidos/'+editId).update(payload).then(()=>{ alert('Partido modificado.'); resetCalForm(); }).catch(err=>alert('Error: '+err.message));
     } else {
@@ -1490,39 +1499,100 @@ document.getElementById('form-calendario').addEventListener('submit', function(e
     }
 });
 
+// ── Helper para construir una tarjeta de partido en el calendario ──
+function _buildFixtureCard(p, key) {
+    const pL = p.ptsLocal||0, pV = p.ptsVisita||0;
+    const eqL = Object.values(cacheEquipos).find(e=>e.nombre===p.local);
+    const eqV = Object.values(cacheEquipos).find(e=>e.nombre===p.visita);
+    const logoL = generarLogoHTML(eqL), logoV = generarLogoHTML(eqV);
+    const bClass = p.estado==='Finalizado' ? 'badge-finalizado' : 'badge-programado';
+    const faseTag = p.fase && p.fase !== 'Ronda Regular'
+        ? `<span style="background:rgba(168,85,247,.25);color:#c084fc;border:1px solid rgba(168,85,247,.5);border-radius:4px;padding:2px 7px;font-size:.65rem;font-weight:800;text-transform:uppercase;margin-right:6px;">${p.fase}</span>`
+        : '';
+    const calAc = sessionActual.rol==='Administrador'
+        ? `<button onclick="editarPartido('${key}','${p.local}','${p.visita}','${p.fecha||''}','${p.hora||''}','${p.cancha||''}','${p.fase||'Ronda Regular'}')" style="padding:5px 10px;background:#2563eb;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('partidos/${key}')" style="padding:5px 10px;background:#dc2626;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash"></i></button>`
+        : '';
+    const scoreD = p.estado==='Finalizado' ? `<span class="fixture-score-display">${pL} \u2014 ${pV}</span>` : '';
+    return `<div class="fixture-card"><div class="fixture-row"><div class="fixture-logo">${logoL}</div><div class="fixture-center"><div class="fixture-venue"><i class="fa-solid fa-location-dot mr-1"></i>${p.cancha||'Por definir'}</div><div class="fixture-teams">${p.local}<span class="fixture-vs"> vs </span>${p.visita}</div><div class="fixture-datetime"><i class="fa-solid fa-calendar-days mr-1"></i>${p.fecha||'-'} &nbsp;&middot;&nbsp; <i class="fa-solid fa-clock mr-1"></i>${p.hora||'-'}</div></div><div class="fixture-logo">${logoV}</div></div><div class="fixture-footer">${faseTag}<span class="${bClass}">${p.estado}</span>${scoreD}<div style="margin-left:auto;display:flex;gap:6px;">${calAc}</div></div></div>`;
+}
+
 function renderPartidos() {
     if (window.rPartidosListener) {
         try { window.rPartidosListener.off(); } catch(e){}
     }
     const rP = ref('partidos');
     window.rPartidosListener = rP;
-    
-    rP.on('value', snap => {
-        const cCal=document.getElementById('lista-calendario'), cLiv=document.getElementById('lista-resultados');
-        if (!cCal||!cLiv) return;
-        
-        let htmlCal = '';
-        let htmlLiv = '';
-        
-        snap.forEach(child => {
-            const p=child.val(), key=child.key;
-            const pL=p.ptsLocal||0, pV=p.ptsVisita||0;
-            const eqL=Object.values(cacheEquipos).find(e=>e.nombre===p.local);
-            const eqV=Object.values(cacheEquipos).find(e=>e.nombre===p.visita);
-            const logoL=generarLogoHTML(eqL), logoV=generarLogoHTML(eqV);
-            const bClass=p.estado==='Finalizado'?'badge-finalizado':'badge-programado';
-            const calAc=sessionActual.rol==='Administrador'?`<button onclick="editarPartido('${key}','${p.local}','${p.visita}','${p.fecha}','${p.hora}','${p.cancha}')" style="padding:5px 10px;background:#2563eb;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-pen"></i></button><button onclick="eliminarNodo('partidos/${key}')" style="padding:5px 10px;background:#dc2626;color:white;border-radius:4px;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash"></i></button>`:'';
-            const scoreD=p.estado==='Finalizado'?`<span class="fixture-score-display">${pL} — ${pV}</span>`:'';
-            htmlCal+=`<div class="fixture-card"><div class="fixture-row"><div class="fixture-logo">${logoL}</div><div class="fixture-center"><div class="fixture-venue"><i class="fa-solid fa-location-dot mr-1"></i>${p.cancha||'Por definir'}</div><div class="fixture-teams">${p.local}<span class="fixture-vs"> vs </span>${p.visita}</div><div class="fixture-datetime"><i class="fa-solid fa-calendar-days mr-1"></i>${p.fecha||'-'} &nbsp;·&nbsp; <i class="fa-solid fa-clock mr-1"></i>${p.hora||'-'}</div></div><div class="fixture-logo">${logoV}</div></div><div class="fixture-footer"><span class="${bClass}">${p.estado}</span>${scoreD}<div style="margin-left:auto;display:flex;gap:6px;">${calAc}</div></div></div>`;
 
-            const dis=sessionActual.rol!=='Administrador'?'disabled':'';
-            const btnG=sessionActual.rol==='Administrador'?`<div style="padding:10px 16px;border-top:1px solid #334155;background:#172032;"><button onclick="guardarMarcador('${key}')" class="btn-guardar-score"><i class="fa-solid fa-floppy-disk"></i> Guardar Marcador</button></div>`:'';
-            htmlLiv+=`<div class="lv-card"><div class="lv-body"><div class="lv-venue"><i class="fa-solid fa-location-dot" style="margin-right:3px;"></i>${p.cancha||'Por definir'}</div><div class="lv-row"><div class="lv-team"><span class="lv-name">${p.local}</span><div class="lv-logo">${logoL}</div></div><div class="lv-scores"><div class="lv-inputs"><input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" min="0"><span class="lv-sep">:</span><input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" min="0"></div></div><div class="lv-team"><span class="lv-name">${p.visita}</span><div class="lv-logo">${logoV}</div></div></div><div class="lv-datetime"><i class="fa-solid fa-calendar-days" style="margin-right:3px;"></i>${p.fecha||'-'} · <i class="fa-solid fa-clock" style="margin-right:3px;"></i>${p.hora||'-'}</div></div><div class="lv-footer"><span class="${bClass}">${p.estado}</span></div>${btnG}</div>`;
+    rP.on('value', snap => {
+        const cCal = document.getElementById('lista-calendario');
+        const cLiv = document.getElementById('lista-resultados');
+        if (!cCal || !cLiv) return;
+
+        // Separar partidos por fase
+        const regular  = [];  // {key, p}
+        const tercios  = [];  // {key, p}
+
+        snap.forEach(child => {
+            const p = child.val(), key = child.key;
+            if (p.fase === 'Tercios de Final') {
+                tercios.push({key, p});
+            } else {
+                regular.push({key, p});
+            }
         });
-        
+
+        // ── CALENDARIO agrupado por fase ──
+        let htmlCal = '';
+
+        if (regular.length > 0) {
+            htmlCal += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 14px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);border-radius:10px;">
+                <i class="fa-solid fa-layer-group" style="color:#60a5fa;"></i>
+                <span style="font-size:.82rem;font-weight:900;color:#60a5fa;letter-spacing:.5px;text-transform:uppercase;">Ronda Regular</span>
+                <span style="margin-left:auto;font-size:.7rem;color:#475569;font-weight:700;">${regular.length} partido(s)</span>
+            </div>`;
+            regular.forEach(({key, p}) => { htmlCal += _buildFixtureCard(p, key); });
+        }
+
+        if (tercios.length > 0) {
+            htmlCal += `<div style="display:flex;align-items:center;gap:10px;margin:18px 0 10px;padding:8px 14px;background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.25);border-radius:10px;">
+                <i class="fa-solid fa-trophy" style="color:#c084fc;"></i>
+                <span style="font-size:.82rem;font-weight:900;color:#c084fc;letter-spacing:.5px;text-transform:uppercase;">Tercios de Final</span>
+                <span style="margin-left:auto;font-size:.7rem;color:#475569;font-weight:700;">${tercios.length} partido(s)</span>
+            </div>`;
+            tercios.forEach(({key, p}) => { htmlCal += _buildFixtureCard(p, key); });
+        }
+
+        if (regular.length === 0 && tercios.length === 0) {
+            htmlCal = '<div class="text-center py-12 text-slate-500"><i class="fa-solid fa-calendar-xmark text-3xl mb-3 block text-slate-700"></i><p class="text-sm">No hay partidos agendados.</p></div>';
+        }
+
         cCal.innerHTML = htmlCal;
+
+        // ── RESULTADOS LIVE (todos los partidos, con etiqueta de fase) ──
+        let htmlLiv = '';
+        const todosOrdenados = [...regular, ...tercios];
+
+        if (todosOrdenados.length === 0) {
+            htmlLiv = '<div class="text-center py-12 text-slate-500"><i class="fa-solid fa-square-poll-vertical text-3xl mb-3 block text-slate-700"></i><p class="text-sm">No hay partidos para mostrar.</p></div>';
+        } else {
+            todosOrdenados.forEach(({key, p}) => {
+                const pL = p.ptsLocal||0, pV = p.ptsVisita||0;
+                const eqL = Object.values(cacheEquipos).find(e=>e.nombre===p.local);
+                const eqV = Object.values(cacheEquipos).find(e=>e.nombre===p.visita);
+                const logoL = generarLogoHTML(eqL), logoV = generarLogoHTML(eqV);
+                const bClass = p.estado==='Finalizado' ? 'badge-finalizado' : 'badge-programado';
+                const dis = sessionActual.rol !== 'Administrador' ? 'disabled' : '';
+                const btnG = sessionActual.rol==='Administrador'
+                    ? `<div style="padding:10px 16px;border-top:1px solid #334155;background:#172032;"><button onclick="guardarMarcador('${key}')" class="btn-guardar-score"><i class="fa-solid fa-floppy-disk"></i> Guardar Marcador</button></div>`
+                    : '';
+                const faseBadge = p.fase === 'Tercios de Final'
+                    ? `<span style="background:rgba(168,85,247,.2);color:#c084fc;border:1px solid rgba(168,85,247,.4);border-radius:4px;padding:1px 6px;font-size:.6rem;font-weight:800;text-transform:uppercase;display:block;text-align:center;margin-bottom:4px;">${p.fase}</span>`
+                    : '';
+                htmlLiv += `<div class="lv-card"><div class="lv-body">${faseBadge}<div class="lv-venue"><i class="fa-solid fa-location-dot" style="margin-right:3px;"></i>${p.cancha||'Por definir'}</div><div class="lv-row"><div class="lv-team"><span class="lv-name">${p.local}</span><div class="lv-logo">${logoL}</div></div><div class="lv-scores"><div class="lv-inputs"><input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" min="0"><span class="lv-sep">:</span><input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" min="0"></div></div><div class="lv-team"><span class="lv-name">${p.visita}</span><div class="lv-logo">${logoV}</div></div></div><div class="lv-datetime"><i class="fa-solid fa-calendar-days" style="margin-right:3px;"></i>${p.fecha||'-'} · <i class="fa-solid fa-clock" style="margin-right:3px;"></i>${p.hora||'-'}</div></div><div class="lv-footer"><span class="${bClass}">${p.estado}</span></div>${btnG}</div>`;
+            });
+        }
+
         cLiv.innerHTML = htmlLiv;
-        
         recalcularPosiciones();
     });
     if (!activeListeners.includes(rP)) activeListeners.push(rP);
@@ -1542,11 +1612,13 @@ function guardarMarcador(id) {
         .catch(err => alert('Error: '+err.message));
 }
 
-function editarPartido(id,local,visita,fecha,hora,cancha) {
+function editarPartido(id,local,visita,fecha,hora,cancha,fase) {
     if (sessionActual.rol!=='Administrador') return;
     document.getElementById('edit-match-id').value=id;
     document.getElementById('cal-local-select').value=local;
     document.getElementById('cal-visita-select').value=visita;
+    const faseEl = document.getElementById('cal-fase-select');
+    if (faseEl) faseEl.value = fase || 'Ronda Regular';
     document.getElementById('cal-fecha').value=fecha;
     document.getElementById('cal-hora').value=hora;
     document.getElementById('cal-cancha').value=cancha;
@@ -1561,29 +1633,30 @@ function resetCalForm() {
     document.getElementById('cal-hora').value='';
     document.getElementById('cal-cancha').value='';
     document.getElementById('btn-submit-match').innerText='Agendar Partido';
-    // BUGFIX: Resetear los selectores de equipos de forma INDEPENDIENTE
-    // para que 'Local' y 'Visitante' no queden vinculados al mismo valor.
+    // Resetear selectores de equipos de forma INDEPENDIENTE
     const selLocal  = document.getElementById('cal-local-select');
     const selVisita = document.getElementById('cal-visita-select');
     if (selLocal  && selLocal.options.length  > 0) selLocal.selectedIndex  = 0;
     if (selVisita && selVisita.options.length > 1) selVisita.selectedIndex = 1;
+    // Resetear selector de fase
+    const selFase = document.getElementById('cal-fase-select');
+    if (selFase) selFase.value = 'Ronda Regular';
 }
 
 // ── POSICIONES ──
 function recalcularPosiciones() {
-    // Construye stats base para cada equipo, guardando su grupo si existe
-    const equipoGrupo = {}; // nombre -> grupo ('A','B',... o null)
+    const equipoGrupo = {};
     Object.values(cacheEquipos).forEach(e => {
         equipoGrupo[e.nombre] = e.grupo || null;
     });
 
     ref('partidos').once('value', snap => {
-        const tablaGrupos = {};
+        const tablaGrupos  = {};
         const tablaGeneral = {};
-        const tieneGrupos = window.formatoActualId === 'grupos';
+        const tablaTermios = {}; // tabla exclusiva para Tercios de Final
+        const tieneGrupos  = window.formatoActualId === 'grupos';
 
         if (tieneGrupos) {
-            // Inicializar equipos en sus respectivos grupos basándose en la configuración manual
             Object.values(cacheEquipos).forEach(e => {
                 if (e.grupo) {
                     const g = e.grupo;
@@ -1592,29 +1665,44 @@ function recalcularPosiciones() {
                 }
             });
         } else {
-            // Inicializar tabla general
             Object.values(cacheEquipos).forEach(e => {
                 tablaGeneral[e.nombre] = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
             });
         }
 
-        // Acumular resultados
+        // Acumular resultados por fase
         snap.forEach(child => {
             const p = child.val();
             if (p.estado !== 'Finalizado') return;
             const pL = parseInt(p.ptsLocal)  || 0;
             const pV = parseInt(p.ptsVisita) || 0;
+            const esFaseTercios = p.fase === 'Tercios de Final';
 
+            // ── Tabla Tercios de Final (siempre, independiente del formato) ──
+            if (esFaseTercios) {
+                if (!tablaTermios[p.local])  tablaTermios[p.local]  = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
+                if (!tablaTermios[p.visita]) tablaTermios[p.visita] = {jj:0,jg:0,jp:0,cf:0,cc:0,pts:0};
+                tablaTermios[p.local].jj++;  tablaTermios[p.visita].jj++;
+                tablaTermios[p.local].cf  += pL; tablaTermios[p.local].cc  += pV;
+                tablaTermios[p.visita].cf += pV; tablaTermios[p.visita].cc += pL;
+                if (pL > pV) {
+                    tablaTermios[p.local].jg++;  tablaTermios[p.local].pts  += 2;
+                    tablaTermios[p.visita].jp++; tablaTermios[p.visita].pts += 1;
+                } else if (pV > pL) {
+                    tablaTermios[p.visita].jg++; tablaTermios[p.visita].pts += 2;
+                    tablaTermios[p.local].jp++;  tablaTermios[p.local].pts  += 1;
+                }
+                return; // No conta para grupos o general
+            }
+
+            // ── Tabla de Grupos o General (solo Ronda Regular) ──
             if (tieneGrupos) {
                 const gL = equipoGrupo[p.local];
                 const gV = equipoGrupo[p.visita];
-                
-                // Solo si ambos equipos pertenecen al mismo grupo (y tienen uno), sumamos a ese grupo.
                 if (gL && gV && gL === gV) {
                     const g = gL;
                     const tb = tablaGrupos[g];
                     if (!tb || !tb[p.local] || !tb[p.visita]) return;
-                    
                     tb[p.local].jj++;  tb[p.visita].jj++;
                     tb[p.local].cf  += pL; tb[p.local].cc  += pV;
                     tb[p.visita].cf += pV; tb[p.visita].cc += pL;
@@ -1652,9 +1740,11 @@ function recalcularPosiciones() {
             'C': { titulo:'#60a5fa', borde:'rgba(96,165,250,.35)', bg:'rgba(96,165,250,.07)' },
             'D': { titulo:'#f472b6', borde:'rgba(244,114,182,.35)', bg:'rgba(244,114,182,.07)' },
         };
-        const colorDefault = { titulo:'#fbbf24', borde:'rgba(251,191,36,.35)', bg:'rgba(251,191,36,.07)' };
+        const colorDefault  = { titulo:'#fbbf24', borde:'rgba(251,191,36,.35)', bg:'rgba(251,191,36,.07)' };
+        const colorTercios  = { titulo:'#c084fc', borde:'rgba(168,85,247,.35)',  bg:'rgba(168,85,247,.07)', icono:'fa-trophy' };
 
-        function construirTablaHTML(titulo, stats, color) {
+        function construirTablaHTML(titulo, stats, color, icono) {
+            if (Object.keys(stats).length === 0) return '';
             const sorted = Object.keys(stats)
                 .map(n => ({ name:n, ...stats[n], dif: stats[n].cf - stats[n].cc }))
                 .sort((a,b) => b.pts - a.pts || b.dif - a.dif || b.cf - a.cf);
@@ -1679,11 +1769,12 @@ function recalcularPosiciones() {
                 </tr>`;
             }).join('');
 
+            const iconoClase = icono || 'fa-layer-group';
             return `<div style="border:1px solid ${color.borde};border-radius:16px;overflow:hidden;background:${color.bg};">
                 <div style="padding:14px 18px;border-bottom:1px solid ${color.borde};display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);">
-                    <i class="fa-solid fa-layer-group" style="color:${color.titulo};"></i>
+                    <i class="fa-solid ${iconoClase}" style="color:${color.titulo};"></i>
                     <span style="font-size:1rem;font-weight:900;color:${color.titulo};letter-spacing:.5px;">${titulo}</span>
-                    <span style="margin-left:auto;font-size:.7rem;color:#64748b;font-weight:700;">Criterio FIBA: Victoria=2pts · Derrota=1pt</span>
+                    <span style="margin-left:auto;font-size:.7rem;color:#64748b;font-weight:700;">Criterio FIBA: Victoria=2pts &middot; Derrota=1pt</span>
                 </div>
                 <div style="overflow-x:auto;">
                 <table style="width:100%;border-collapse:collapse;font-size:.82rem;color:#cbd5e1;">
@@ -1706,16 +1797,26 @@ function recalcularPosiciones() {
             </div>`;
         }
 
+        // ── Renderizar tablas de Ronda Regular ──
         if (tieneGrupos) {
             const gruposOrdenados = Object.keys(tablaGrupos).sort();
             gruposOrdenados.forEach(g => {
                 const color = coloresGrupo[g] || colorDefault;
-                container.innerHTML += construirTablaHTML('GRUPO ' + g, tablaGrupos[g], color);
+                container.innerHTML += construirTablaHTML('GRUPO ' + g, tablaGrupos[g], color, 'fa-layer-group');
             });
-            // Nota de Fase Eliminatoria
-            container.innerHTML += `<div style="text-align:center;padding:14px;color:#64748b;font-size:.78rem;border:1px dashed #334155;border-radius:12px;"><i class="fa-solid fa-arrow-right-arrow-left" style="margin-right:6px;color:#a78bfa;"></i>Los <strong style="color:#f1f5f9;">1°</strong> y <strong style="color:#f1f5f9;">2°</strong> de cada grupo avanzan a la <strong style="color:#a78bfa;">Fase Eliminatoria</strong></div>`;
+            container.innerHTML += `<div style="text-align:center;padding:14px;color:#64748b;font-size:.78rem;border:1px dashed #334155;border-radius:12px;"><i class="fa-solid fa-arrow-right-arrow-left" style="margin-right:6px;color:#a78bfa;"></i>Los <strong style="color:#f1f5f9;">1\u00b0</strong> y <strong style="color:#f1f5f9;">2\u00b0</strong> de cada grupo avanzan a la <strong style="color:#a78bfa;">Fase Eliminatoria</strong></div>`;
         } else {
-            container.innerHTML += construirTablaHTML('CLASIFICACIÓN GENERAL', tablaGeneral, colorDefault);
+            container.innerHTML += construirTablaHTML('CLASIFICACI\u00d3N GENERAL', tablaGeneral, colorDefault, 'fa-layer-group');
+        }
+
+        // ── Renderizar tabla TERCIOS DE FINAL (si hay datos) ──
+        if (Object.keys(tablaTermios).length > 0) {
+            // Separador visual
+            container.innerHTML += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;margin-top:4px;background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.2);border-radius:10px;">
+                <i class="fa-solid fa-trophy" style="color:#c084fc;"></i>
+                <span style="font-size:.75rem;font-weight:900;color:#c084fc;text-transform:uppercase;letter-spacing:.8px;">Fase Eliminatoria &mdash; Tercios de Final</span>
+            </div>`;
+            container.innerHTML += construirTablaHTML('TABLA / CLASES TERCIOS DE FINAL', tablaTermios, colorTercios, 'fa-trophy');
         }
     });
 }
