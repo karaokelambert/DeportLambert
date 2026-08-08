@@ -1238,7 +1238,14 @@ function vincularListeners() {
             if (sessionActual.rol!=='Delegado'||eq.cedulaDelegado===sessionActual.cedula)
                 optsHtml += `<option value="${eq.nombre}">${eq.nombre}</option>`;
         });
-        ['player-eq-select','cal-local-select','cal-visita-select'].forEach(id => { const el=document.getElementById(id); if(el) el.innerHTML=optsHtml; });
+        ['player-eq-select','cal-local-select','cal-visita-select'].forEach(id => { 
+            const el = document.getElementById(id); 
+            if(el) {
+                const currentVal = el.value;
+                el.innerHTML = optsHtml; 
+                if (currentVal) el.value = currentVal;
+            }
+        });
 
         const cEq  = document.getElementById('lista-equipos');
         const cJug = document.getElementById('contenedor-equipos-jugadores');
@@ -1636,9 +1643,9 @@ function renderPartidos() {
                             
                             <div class="lv-scores" style="padding-top:0;">
                                 <div class="lv-inputs">
-                                    <input type="number" id="score-L-${key}" value="${pL}" ${dis} class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6;" min="0" ${evFn}>
+                                    <input type="number" id="score-L-${key}" value="${pL}" class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6; pointer-events:none;" readonly>
                                     <span class="lv-sep" style="font-size:1.8rem; margin:0 4px;">:</span>
-                                    <input type="number" id="score-V-${key}" value="${pV}" ${dis} class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6;" min="0" ${evFnV}>
+                                    <input type="number" id="score-V-${key}" value="${pV}" class="lv-score-box" style="font-size:2rem; width:64px; height:64px; background:#0f172a; border:2px solid #3b82f6; pointer-events:none;" readonly>
                                 </div>
                             </div>
                             
@@ -1652,7 +1659,13 @@ function renderPartidos() {
             });
         }
 
-        cLiv.innerHTML = htmlLiv;
+        const activeEl = document.activeElement;
+        const isEditingLive = activeEl && activeEl.classList && activeEl.classList.contains('lv-score-box');
+        
+        if (!isEditingLive) {
+            cLiv.innerHTML = htmlLiv;
+        }
+        
         recalcularPosiciones();
     });
     if (!activeListeners.includes(rP)) activeListeners.push(rP);
