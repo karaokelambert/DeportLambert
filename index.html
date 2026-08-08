@@ -2126,7 +2126,7 @@ window.addEventListener('appinstalled', () => {
 function instalarApp() {
     if (_deferredPrompt) {
         // Chrome/Edge en Android y PC: instala directamente
-        _deferredPrompt.show();
+        _deferredPrompt.prompt();
         _deferredPrompt.userChoice.then(() => { _deferredPrompt = null; });
     } else {
         // Safari iOS, Firefox u otros: mostrar instrucciones

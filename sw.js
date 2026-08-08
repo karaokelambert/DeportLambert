@@ -1,8 +1,13 @@
 const CACHE_NAME = 'jl-sports-hub-v3';
 
-// Solo cachear assets estáticos de terceros (CSS, fuentes, librerías)
-// El HTML principal siempre se obtiene de la red para garantizar sincronización
+// Solo cachear assets estáticos de terceros y shell de la app
+// El HTML principal y manifest se pre-cachean para instalación offline ultra-rápida
 const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap'
 ];
