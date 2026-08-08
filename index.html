@@ -1530,9 +1530,16 @@ function renderPartidos() {
 
 function guardarMarcador(id) {
     if (sessionActual.rol!=='Administrador') { alert('Acceso denegado.'); return; }
-    const sL=parseInt(document.getElementById('score-L-'+id).value)||0;
-    const sV=parseInt(document.getElementById('score-V-'+id).value)||0;
-    ref('partidos/'+id).update({ptsLocal:sL,ptsVisita:sV,estado:'Finalizado'}).then(()=>alert('¡Marcador guardado!')).catch(err=>alert('Error: '+err.message));
+    // BUGFIX: Capturar valores ANTES de la operación asíncrona para evitar
+    // que el re-renderizado del listener sobreescriba los inputs del DOM.
+    const inputL = document.getElementById('score-L-'+id);
+    const inputV = document.getElementById('score-V-'+id);
+    const sL = parseInt(inputL ? inputL.value : 0) || 0;
+    const sV = parseInt(inputV ? inputV.value : 0) || 0;
+    const payload = { ptsLocal: sL, ptsVisita: sV, estado: 'Finalizado' };
+    ref('partidos/'+id).update(payload)
+        .then(() => alert('¡Marcador guardado: ' + sL + ' - ' + sV + '!'))
+        .catch(err => alert('Error: '+err.message));
 }
 
 function editarPartido(id,local,visita,fecha,hora,cancha) {
@@ -1548,7 +1555,19 @@ function editarPartido(id,local,visita,fecha,hora,cancha) {
     window.scrollTo({top:0,behavior:'smooth'});
 }
 
-function resetCalForm() { document.getElementById('edit-match-id').value=''; document.getElementById('cal-fecha').value=''; document.getElementById('cal-hora').value=''; document.getElementById('cal-cancha').value=''; document.getElementById('btn-submit-match').innerText='Agendar Partido'; }
+function resetCalForm() {
+    document.getElementById('edit-match-id').value='';
+    document.getElementById('cal-fecha').value='';
+    document.getElementById('cal-hora').value='';
+    document.getElementById('cal-cancha').value='';
+    document.getElementById('btn-submit-match').innerText='Agendar Partido';
+    // BUGFIX: Resetear los selectores de equipos de forma INDEPENDIENTE
+    // para que 'Local' y 'Visitante' no queden vinculados al mismo valor.
+    const selLocal  = document.getElementById('cal-local-select');
+    const selVisita = document.getElementById('cal-visita-select');
+    if (selLocal  && selLocal.options.length  > 0) selLocal.selectedIndex  = 0;
+    if (selVisita && selVisita.options.length > 1) selVisita.selectedIndex = 1;
+}
 
 // ── POSICIONES ──
 function recalcularPosiciones() {
