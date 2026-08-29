@@ -79,7 +79,8 @@ export default function DisciplinesPortal({
         <img 
           src={disc.customLogoUrl} 
           alt={disc.title} 
-          className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)]"
+          className="w-20 h-20 sm:w-24 sm:h-24 max-w-[96px] max-h-[96px] object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)]"
+          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
         />
       );
     }

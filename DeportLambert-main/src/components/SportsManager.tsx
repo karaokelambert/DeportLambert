@@ -1220,12 +1220,12 @@ function DashboardView({
                 className="bg-gradient-to-r from-slate-900 via-[#0F172A] to-slate-900 border-2 border-amber-500 hover:border-amber-400 rounded-3xl p-5 sm:p-7 shadow-[0_6px_25px_rgba(245,158,11,0.2)] hover:shadow-[0_8px_30px_rgba(245,158,11,0.35)] transition-all duration-300 flex flex-col md:flex-row items-center justify-between gap-6"
               >
                 {/* 1. BLOQUE EQUIPO LOCAL (Vertical) */}
-                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[200px]">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
+                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
                     {homeLogo ? (
-                      <img src={homeLogo} alt={g.homeTeam} className="w-full h-full object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)] drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]" />
+                      <img src={homeLogo} alt={g.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                     ) : (
-                      <Trophy className="w-12 h-12 sm:w-14 sm:h-14 text-amber-400 filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)]" />
+                      <Trophy className="w-10 h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
                     )}
                   </div>
                   <p className="font-black uppercase text-sm sm:text-base text-white tracking-wide leading-tight text-center break-words w-full">
@@ -1270,10 +1270,10 @@ function DashboardView({
                 </div>
 
                 {/* 3. BLOQUE EQUIPO VISITANTE (Vertical) + Acción Rápida Admin */}
-                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[200px] relative">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
+                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px] relative">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
                     {awayLogo ? (
-                      <img src={awayLogo} alt={g.awayTeam} className="w-full h-full object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)] drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]" />
+                      <img src={awayLogo} alt={g.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                     ) : (
                       <Trophy className="w-12 h-12 sm:w-14 sm:h-14 text-[#E879F9] filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)]" />
                     )}
@@ -1455,9 +1455,9 @@ function TeamsView({
               
               {/* Header del Equipo */}
               <div className="p-5 border-b border-slate-800/80 bg-slate-950/40 flex items-center gap-4">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
                   {team.logoUrl ? (
-                    <img src={team.logoUrl} alt="Logo" className="w-full h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)] drop-shadow-[0_0_4px_rgba(255,255,255,0.3)]" />
+                    <img src={team.logoUrl} alt="Logo" className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                   ) : (
                     <Trophy className="w-8 h-8 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)]" />
                   )}
@@ -2854,12 +2854,12 @@ function CalendarView({
                 {/* Enfrentamiento Vertical 3 Columnas */}
                 <div className="flex flex-row items-center justify-between gap-4 sm:gap-6 pt-1">
                   {/* Local */}
-                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[200px]">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
                       {homeLogo ? (
-                        <img src={homeLogo} alt={game.homeTeam} className="w-full h-full object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)] drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]" />
+                        <img src={homeLogo} alt={game.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                       ) : (
-                        <Trophy className="w-12 h-12 text-amber-400 filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)]" />
+                        <Trophy className="w-10 h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
                       )}
                     </div>
                     <span className="font-black uppercase text-sm sm:text-base text-white block leading-tight text-center break-words w-full">
@@ -2884,12 +2884,12 @@ function CalendarView({
                   </div>
 
                   {/* Visitante */}
-                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[200px]">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
                       {awayLogo ? (
-                        <img src={awayLogo} alt={game.awayTeam} className="w-full h-full object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)] drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]" />
+                        <img src={awayLogo} alt={game.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                       ) : (
-                        <Trophy className="w-12 h-12 text-[#E879F9] filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)]" />
+                        <Trophy className="w-10 h-10 text-[#E879F9] filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
                       )}
                     </div>
                     <span className="font-black uppercase text-sm sm:text-base text-white block leading-tight text-center break-words w-full">
@@ -3222,9 +3222,9 @@ function CompactMatchCard({
         
         {/* Equipo Local */}
         <div className="flex flex-col items-center space-y-1.5 min-w-0">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
             {homeLogo ? (
-              <img src={homeLogo} alt={game.homeTeam} className="w-full h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)] drop-shadow-[0_0_4px_rgba(255,255,255,0.3)]" />
+              <img src={homeLogo} alt={game.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
             ) : (
               <Trophy className="w-8 h-8 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)]" />
             )}
@@ -3238,9 +3238,9 @@ function CompactMatchCard({
 
         {/* Equipo Visitante */}
         <div className="flex flex-col items-center space-y-1.5 min-w-0 border-l border-slate-800 pl-2">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-purple-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-purple-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
             {awayLogo ? (
-              <img src={awayLogo} alt={game.awayTeam} className="w-full h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)] drop-shadow-[0_0_4px_rgba(255,255,255,0.3)]" />
+              <img src={awayLogo} alt={game.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_6px_8px_rgba(0,0,0,0.6)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
             ) : (
               <Trophy className="w-8 h-8 text-[#E879F9] filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)]" />
             )}

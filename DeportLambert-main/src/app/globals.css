@@ -8,6 +8,16 @@
   box-sizing: border-box;
 }
 
+img, svg, video, canvas, audio, iframe, embed, object {
+  max-width: 100% !important;
+  height: auto;
+}
+
+img {
+  max-height: 100%;
+  object-fit: contain;
+}
+
 html,
 body {
   margin: 0;
