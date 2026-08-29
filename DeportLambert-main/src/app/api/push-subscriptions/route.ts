@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-static';
 
 /**
  * Tabla / Colección independiente en memoria (o adaptador para BD persistente)

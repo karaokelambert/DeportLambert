@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-static';
 
 /**
  * Función observadora / webhook dedicada para disparar notificaciones push

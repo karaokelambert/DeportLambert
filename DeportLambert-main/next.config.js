@@ -1,8 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
+  trailingSlash: true,
   reactStrictMode: true,
-  // Allow images from any origin for team logos
   images: {
+    unoptimized: true,
     domains: ['picsum.photos'],
   },
 };
