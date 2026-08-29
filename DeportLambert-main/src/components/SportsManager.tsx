@@ -73,11 +73,26 @@ import {
   Shuffle,
   Eye,
   EyeOff,
+  Cloud,
+  CloudUpload,
+  RefreshCw,
+  Smartphone,
+  Globe,
+  Radio,
 } from 'lucide-react';
 import DisciplinesPortal, { DISCIPLINES, DisciplineData } from './DisciplinesPortal';
 import Navbar360 from './Navbar360';
-import { SuperAdminUser } from './PortalModals';
+import { SuperAdminUser, CloudSyncModal } from './PortalModals';
 import { BasketballIcon3D, VolleyballIcon3D, FutsalIcon3D, BaseballIcon3D, GoldTrophyIcon3D } from './SportsIcons3D';
+import { 
+  fetchStateFromCloud, 
+  pushStateToCloud, 
+  getLocalState,
+  saveLocalState,
+  getSyncConfig, 
+  SyncConfig, 
+  CloudTournamentState 
+} from '../lib/cloudSync';
 
 // ── Tipos ────────────────────────────────────────────────────
 export type Role = 'ADMIN' | 'DELEGADO' | 'VISITANTE';
@@ -261,6 +276,15 @@ export default function SportsManager() {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // ── Sincronización en la Nube y Multi-Dispositivo ────────
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncConfig] = useState<SyncConfig>(getSyncConfig());
+  const localUpdatedAtRef = useRef<number>(Date.now());
+  const isHydratedRef = useRef<boolean>(false);
 
   // ── Estado de notificaciones ─────────────
   const [notifEnabled, setNotifEnabled] = useState(false);
@@ -273,8 +297,108 @@ export default function SportsManager() {
     }
   }, []);
 
-  // ── Datos por disciplina ──────────────────────────────────
-  const [disciplineData, setDisciplineData] = useState(INITIAL_DISCIPLINE_DATA);
+  // ── Datos por disciplina con protección contra sobreescritura ──
+  const [disciplineData, setDisciplineData] = useState<Record<string, { groups: string[], teams: Team[], games: Game[] }>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = getLocalState();
+        if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
+          return local.disciplineData;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_DISCIPLINE_DATA;
+  });
+
+  // Inicialización de datos desde localStorage y nube con prioridad a datos reales
+  useEffect(() => {
+    async function initCloud() {
+      try {
+        setSyncStatus('syncing');
+        // 1. Cargar primero datos locales de localStorage
+        const local = getLocalState();
+        if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
+          setDisciplineData(local.disciplineData);
+          if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
+          if (local.branding) setBranding(local.branding);
+          if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
+          if (local.updatedAt) {
+            localUpdatedAtRef.current = local.updatedAt;
+            setLastSyncTime(new Date(local.updatedAt).toLocaleTimeString());
+          }
+        }
+
+        // 2. Consultar la nube y combinar solo si la nube tiene datos más recientes
+        const remote = await fetchStateFromCloud(syncConfig);
+        if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
+          if (!local || (remote.updatedAt && remote.updatedAt > (local.updatedAt || 0))) {
+            setDisciplineData(remote.disciplineData);
+            if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+            if (remote.branding) setBranding(remote.branding);
+            if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+            localUpdatedAtRef.current = remote.updatedAt;
+            setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
+          }
+        }
+        setSyncStatus('synced');
+      } catch (e) {
+        setSyncStatus('offline');
+      } finally {
+        isHydratedRef.current = true;
+      }
+    }
+    initCloud();
+  }, [syncConfig]);
+
+  // Polling periódico cada 4s para sincronizar marcadores y juegos desde otros teléfonos
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      if (!syncConfig.enabled) return;
+      try {
+        const remote = await fetchStateFromCloud(syncConfig);
+        if (remote && remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current) {
+          setSyncStatus('syncing');
+          if (remote.disciplineData) setDisciplineData(remote.disciplineData);
+          if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+          if (remote.branding) setBranding(remote.branding);
+          if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+          localUpdatedAtRef.current = remote.updatedAt;
+          setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
+          setSyncStatus('synced');
+        }
+      } catch (e) {}
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [syncConfig]);
+
+  // Función de sincronización forzada a demanda
+  const triggerPushSync = useCallback(async () => {
+    const now = Date.now();
+    localUpdatedAtRef.current = now;
+    setSyncStatus('syncing');
+    const payload: CloudTournamentState = {
+      version: 2,
+      updatedAt: now,
+      updatedBy: userName || role,
+      disciplineData,
+      disciplinesList,
+      branding,
+      registeredAdmins,
+    };
+    const ok = await pushStateToCloud(payload, syncConfig);
+    setSyncStatus(ok ? 'synced' : 'offline');
+    setLastSyncTime(new Date(now).toLocaleTimeString());
+  }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
+
+  // Sincronización automática con debounce al realizar cambios
+  useEffect(() => {
+    if (!isHydratedRef.current) return;
+    const t = setTimeout(() => {
+      triggerPushSync();
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
 
   const currentDiscKey = selectedDiscipline ? selectedDiscipline.id : 'baloncesto';
   const currentTeams = disciplineData[currentDiscKey]?.teams || INITIAL_DISCIPLINE_DATA.baloncesto.teams;
@@ -845,11 +969,11 @@ export default function SportsManager() {
   ].filter(item => item.roles.includes(role));
 
   return (
-    <div className="min-h-screen w-full bg-[#70B6E8] p-3 sm:p-5 flex flex-col md:flex-row gap-5 font-sans">
+    <div className="min-h-screen w-full bg-[#70B6E8] p-3 sm:p-5 flex flex-col md:flex-row gap-5 font-sans relative">
 
-      {/* ── Sidebar (Dark Midnight #0F172A - Fixed Viewport) ── */}
+      {/* ── 1. Desktop Sidebar (Dark Midnight #0F172A - Fixed Viewport en Pantallas Grandes) ── */}
       <aside
-        className={`${sidebarOpen ? 'w-full md:w-72' : 'w-full md:w-20'} bg-[#0F172A] border border-slate-700/80 rounded-2xl md:rounded-3xl shadow-2xl flex flex-col shrink-0 transition-all duration-300 overflow-hidden md:fixed md:top-5 md:left-5 md:bottom-5 md:z-40 z-40`}
+        className={`hidden md:flex ${sidebarOpen ? 'w-72' : 'w-20'} bg-[#0F172A] border border-slate-700/80 rounded-3xl shadow-2xl flex-col shrink-0 transition-all duration-300 overflow-hidden md:fixed md:top-5 md:left-5 md:bottom-5 md:z-40`}
       >
         {/* Logo & Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800/80 flex items-center justify-between overflow-hidden shrink-0">
@@ -884,7 +1008,7 @@ export default function SportsManager() {
             return (
               <button
                 key={item.id}
-                onClick={() => { setActiveTab(item.id); if (window.innerWidth < 768) setSidebarOpen(false); }}
+                onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left transition-all text-xs font-black uppercase tracking-wider ${
                   isActive
                     ? 'bg-[#FF8A00] text-white shadow-lg shadow-orange-950/60 font-black'
@@ -908,6 +1032,25 @@ export default function SportsManager() {
 
         {/* Footer del sidebar */}
         <div className="p-4 border-t border-slate-800/80 space-y-3 bg-[#0b1222]/80 shrink-0">
+          {/* Badge de Sincronización en la Nube */}
+          {sidebarOpen && (
+            <button
+              onClick={() => setShowSyncModal(true)}
+              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-700/80 hover:border-emerald-500/60 transition-all text-left group"
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                <Cloud className={`w-4 h-4 shrink-0 ${syncStatus === 'synced' ? 'text-[#00E676]' : syncStatus === 'syncing' ? 'text-amber-400 animate-spin' : 'text-slate-400'}`} />
+                <div className="truncate">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Multi-Dispositivo</p>
+                  <p className="text-[11px] font-black text-white truncate">
+                    {syncStatus === 'synced' ? '🟢 Sincronizado' : syncStatus === 'syncing' ? '🔄 Actualizando...' : '⚪ Local'}
+                  </p>
+                </div>
+              </div>
+              <RefreshCw className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+            </button>
+          )}
+
           {/* Switch de notificaciones */}
           {sidebarOpen && (
             <div className="bg-[#0F172A] rounded-xl p-3 space-y-2 border border-slate-700/60 shadow-inner">
@@ -932,7 +1075,7 @@ export default function SportsManager() {
             </div>
           )}
 
-          {/* Usuario activo: ADMINISTRADOR GENERAL */}
+          {/* Usuario activo */}
           {sidebarOpen && (
             <div className="bg-[#0F172A] rounded-xl p-3 border border-slate-700/60 shadow-inner">
               <p className="text-[9px] font-black uppercase text-slate-400 mb-0.5 tracking-widest">Usuario Activo</p>
@@ -953,64 +1096,233 @@ export default function SportsManager() {
         </div>
       </aside>
 
-      {/* ── Contenido principal ─────────────────────────────── */}
-      <div className={`flex-1 flex flex-col min-w-0 gap-5 transition-all duration-300 ${sidebarOpen ? 'md:ml-[308px]' : 'md:ml-[100px]'}`}>
+      {/* ── 2. Mobile Slide-Over Drawer (Menú Hamburguesa Flotante en Móviles) ── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop Oscuro */}
+          <div 
+            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+          />
+          
+          {/* Contenedor del Drawer */}
+          <div className="relative w-4/5 max-w-xs bg-[#0F172A] border-r border-slate-700/80 h-full flex flex-col z-50 shadow-2xl overflow-hidden animate-in slide-in-from-left duration-200">
+            <div className="p-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center p-1.5 shadow-md">
+                  <GoldTrophyIcon3D className="w-full h-full" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-black text-[#FF8A00] uppercase truncate">{branding.title}</h2>
+                  <p className="text-[9px] text-slate-400 uppercase font-black">{selectedDiscipline.title}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+              <button
+                onClick={() => { setSelectedDiscipline(null); setMobileMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-800 border border-amber-500/40 text-amber-400 font-black uppercase text-xs mb-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>CAMBIAR DISCIPLINA</span>
+              </button>
+
+              {navItems.map(item => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left text-xs font-black uppercase tracking-wider ${
+                      isActive
+                        ? 'bg-[#FF8A00] text-white shadow-lg font-black'
+                        : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 truncate">
+                      <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    {item.isLiveBadge && (
+                      <span className="flex h-2 w-2 relative shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF3D00]" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-3 border-t border-slate-800 space-y-2 bg-[#0b1222]">
+              <button
+                onClick={() => { setShowSyncModal(true); setMobileMenuOpen(false); }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-slate-200"
+              >
+                <span className="flex items-center gap-2">
+                  <Cloud className="w-4 h-4 text-[#00E676]" />
+                  <span>Sincronización Nube</span>
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono">En Vivo</span>
+              </button>
+
+              <button
+                onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
+                className="w-full flex items-center justify-center gap-2 bg-red-950/40 text-red-400 border border-red-800/40 font-black uppercase text-xs h-9 rounded-xl"
+              >
+                <LogOut className="w-4 h-4" /> Cerrar Sesión
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Mobile Bottom Navigation Bar (Barra Inferior Compacta en Móviles) ── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-[#0F172A]/95 backdrop-blur-xl border-t border-slate-700/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_25px_rgba(0,0,0,0.6)]">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            activeTab === 'dashboard' ? 'text-[#FF8A00] font-black' : 'text-slate-400'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[9px] uppercase tracking-wider font-bold">Panel</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('equipos')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            activeTab === 'equipos' ? 'text-[#FF8A00] font-black' : 'text-slate-400'
+          }`}
+        >
+          <Users className="w-5 h-5" />
+          <span className="text-[9px] uppercase tracking-wider font-bold">Equipos</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('calendario')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            activeTab === 'calendario' ? 'text-[#FF8A00] font-black' : 'text-slate-400'
+          }`}
+        >
+          <CalendarDays className="w-5 h-5" />
+          <span className="text-[9px] uppercase tracking-wider font-bold">Calendario</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('live-results')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl relative transition-all ${
+            activeTab === 'live-results' ? 'text-[#FF3D00] font-black' : 'text-slate-400'
+          }`}
+        >
+          <div className="relative">
+            <Activity className="w-5 h-5" />
+            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF3D00]" />
+            </span>
+          </div>
+          <span className="text-[9px] uppercase tracking-wider font-bold">En Vivo</span>
+        </button>
+
+        <button
+          onClick={() => setMobileMenuOpen(true)}
+          className="flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-slate-400 hover:text-white"
+        >
+          <Menu className="w-5 h-5" />
+          <span className="text-[9px] uppercase tracking-wider font-bold">Menú</span>
+        </button>
+      </nav>
+
+      {/* ── 4. Contenido Principal Responsivo ────────────────── */}
+      <div className={`flex-1 flex flex-col min-w-0 max-w-full gap-5 transition-all duration-300 ml-0 ${sidebarOpen ? 'md:ml-[308px]' : 'md:ml-[100px]'} pb-24 md:pb-0 overflow-x-hidden`}>
         
         {/* Header superior */}
-        <header className="bg-[#0F172A] border border-slate-700/80 rounded-2xl md:rounded-3xl px-4 sm:px-6 py-4 shadow-xl flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <header className="bg-[#0F172A] border border-slate-700/80 rounded-2xl md:rounded-3xl px-3 sm:px-6 py-3.5 sm:py-4 shadow-xl flex items-center justify-between gap-3 w-full overflow-hidden">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
-              onClick={() => setSidebarOpen(p => !p)}
-              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                  setMobileMenuOpen(true);
+                } else {
+                  setSidebarOpen(p => !p);
+                }
+              }}
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700 shrink-0"
+              title="Menú de Navegación"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider">
-              <span className="text-[#FF8A00] hidden sm:inline">{selectedDiscipline.title}</span>
-              <ChevronRight className="w-4 h-4 text-slate-600 hidden sm:inline" />
-              <span className="text-white">{activeTab.replace('-', ' ').toUpperCase()}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs font-black uppercase tracking-wider min-w-0 truncate">
+              <span className="text-[#FF8A00] truncate">{selectedDiscipline.title}</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0 hidden sm:inline" />
+              <span className="text-white truncate hidden sm:inline">{activeTab.replace('-', ' ').toUpperCase()}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* Indicador de Nube Multi-Dispositivo */}
+            <button
+              onClick={() => setShowSyncModal(true)}
+              title="Sincronización en la Nube en Tiempo Real"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-950/80 border-emerald-500/60 text-[#00E676] shadow-[0_0_12px_rgba(0,230,118,0.25)]'
+                  : syncStatus === 'syncing'
+                  ? 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse'
+                  : 'bg-slate-800 border-slate-700 text-slate-400'
+              }`}
+            >
+              <span className={`relative flex h-2 w-2 shrink-0 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`}>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  syncStatus === 'synced' ? 'bg-emerald-400' : syncStatus === 'syncing' ? 'bg-amber-400' : 'bg-slate-400'
+                }`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  syncStatus === 'synced' ? 'bg-[#00E676]' : syncStatus === 'syncing' ? 'bg-amber-400' : 'bg-slate-400'
+                }`} />
+              </span>
+              <span className="hidden sm:inline">
+                {syncStatus === 'synced' ? 'En Vivo' : syncStatus === 'syncing' ? 'Sincronizando' : 'Local'}
+              </span>
+              <Cloud className="w-3.5 h-3.5" />
+            </button>
+
             <button
               onClick={() => setSelectedDiscipline(null)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-amber-500 bg-slate-800/80 text-amber-300 text-[10px] font-black uppercase tracking-wider transition-all"
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-amber-500 bg-slate-800/80 text-amber-300 text-[10px] font-black uppercase tracking-wider transition-all"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Cambiar Disciplina
+              <ArrowLeft className="w-3.5 h-3.5" /> Disciplinas
             </button>
 
             <button
               onClick={() => setShowExportModal(true)}
-              className="hidden md:flex items-center gap-2 px-3.5 h-8 rounded-lg border border-[#FF8A00] bg-[#FF8A00]/10 text-[#FF8A00] font-black uppercase text-[10px] hover:bg-[#FF8A00] hover:text-white transition-all shadow-[0_0_10px_rgba(255,138,0,0.25)]"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#FF8A00] bg-[#FF8A00]/10 text-[#FF8A00] font-black uppercase text-[10px] hover:bg-[#FF8A00] hover:text-white transition-all shadow-sm"
             >
-              <ArrowDownToLine className="w-3.5 h-3.5" /> Descargar ZIP
+              <ArrowDownToLine className="w-3.5 h-3.5" /> ZIP
             </button>
 
             <button
               onClick={handleToggleNotifications}
               title={notifEnabled ? 'Notificaciones activas' : 'Activar notificaciones'}
-              className="relative p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700"
+              className="relative p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700"
             >
               {notifEnabled
                 ? <BellRing className="w-4 h-4 text-[#00E676]" />
                 : <Bell className="w-4 h-4" />
               }
-              {!notifEnabled && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FF3D00] rounded-full" />
-              )}
             </button>
-
-            <div className="h-6 w-px bg-slate-800" />
-
-            <span className="font-black border border-emerald-500/50 bg-emerald-950/60 text-[#00E676] text-[9px] uppercase px-3 py-1 rounded-full shadow-[0_0_10px_rgba(0,230,118,0.25)]">
-              {branding.season}
-            </span>
           </div>
         </header>
 
         {/* Contenido de pestaña */}
-        <main className="flex-1 overflow-y-auto space-y-6">
+        <main className="flex-1 overflow-y-auto space-y-6 w-full max-w-full">
           {activeTab === 'dashboard'       && <DashboardView role={role} games={currentGames} teams={currentTeams} onShowExport={() => setShowExportModal(true)} onUpdateGame={updateGame} userName={userName} />}
           {activeTab === 'equipos'         && <TeamsView role={role} teams={currentTeams} myTeam={myDelegateTeam} groups={currentGroups} onUpdateTeam={handleUpdateTeam} onAddTeam={handleAddTeam} onDeleteTeam={handleDeleteTeam} />}
           {activeTab === 'grupos'          && (
@@ -1075,6 +1387,14 @@ export default function SportsManager() {
           </div>
         </div>
       )}
+      {/* ── Modal de Sincronización en la Nube ───────────────── */}
+      <CloudSyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        syncStatus={syncStatus}
+        lastSyncTime={lastSyncTime}
+        onForceSync={triggerPushSync}
+      />
     </div>
   );
 }
@@ -1217,83 +1537,89 @@ function DashboardView({
             return (
               <div 
                 key={g.id} 
-                className="bg-gradient-to-r from-slate-900 via-[#0F172A] to-slate-900 border-2 border-amber-500 hover:border-amber-400 rounded-3xl p-5 sm:p-7 shadow-[0_6px_25px_rgba(245,158,11,0.2)] hover:shadow-[0_8px_30px_rgba(245,158,11,0.35)] transition-all duration-300 flex flex-col md:flex-row items-center justify-between gap-6"
+                className="bg-gradient-to-r from-slate-900 via-[#0F172A] to-slate-900 border-2 border-amber-500 hover:border-amber-400 rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 shadow-[0_6px_25px_rgba(245,158,11,0.2)] hover:shadow-[0_8px_30px_rgba(245,158,11,0.35)] transition-all duration-300 flex flex-col items-center justify-between gap-4 w-full max-w-full overflow-hidden"
               >
-                {/* 1. BLOQUE EQUIPO LOCAL (Vertical) */}
-                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
-                    {homeLogo ? (
-                      <img src={homeLogo} alt={g.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                    ) : (
-                      <Trophy className="w-10 h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
+                {/* Enfrentamiento Vertical 3 Columnas Responsivo */}
+                <div className="grid grid-cols-3 md:flex md:flex-row items-center justify-between gap-2 sm:gap-6 w-full max-w-full overflow-hidden">
+                  {/* 1. BLOQUE EQUIPO LOCAL (Vertical) */}
+                  <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
+                      {homeLogo ? (
+                        <img src={homeLogo} alt={g.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                      ) : (
+                        <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
+                      )}
+                    </div>
+                    <p className="font-black uppercase text-xs sm:text-base text-white tracking-wide leading-tight text-center break-words w-full px-0.5">
+                      {g.homeTeam}
+                    </p>
+                    <span className="inline-flex items-center text-[9px] sm:text-xs font-black text-amber-400 bg-amber-950/90 border border-amber-500/70 px-2 sm:px-3 py-0.5 rounded-lg uppercase tracking-widest shadow-sm">
+                      LOCAL
+                    </span>
+                  </div>
+
+                  {/* 2. BLOQUE MARCADOR / TIEMPO (Centro) */}
+                  <div className="flex flex-col items-center justify-center px-1 sm:px-4 shrink-0 space-y-1 sm:space-y-2 min-w-0">
+                    <div className="flex items-center gap-1.5 sm:gap-4 bg-slate-950/80 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner">
+                      <span className="text-2xl sm:text-4xl md:text-5xl font-black text-[#00E676] min-w-[32px] sm:min-w-[56px] text-right font-mono drop-shadow-[0_2px_12px_rgba(0,230,118,0.45)]">
+                        {g.homeScore}
+                      </span>
+                      <span className="text-amber-400 font-black text-sm sm:text-2xl font-mono px-0.5 sm:px-1">VS</span>
+                      <span className="text-2xl sm:text-4xl md:text-5xl font-black text-[#FF3D00] min-w-[32px] sm:min-w-[56px] text-left font-mono drop-shadow-[0_2px_12px_rgba(255,61,0,0.45)]">
+                        {g.awayScore}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2">
+                      {g.status === 'Finalizado' && (
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-yellow-950/80 border border-[#FFC107] text-[#FFC107] shadow-sm">
+                          Finalizado
+                        </span>
+                      )}
+                      {g.status === 'En Curso' && (
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-red-950/90 border border-[#FF3D00] text-[#FF3D00] animate-pulse shadow-sm">
+                          En Vivo
+                        </span>
+                      )}
+                      {g.status === 'Programado' && (
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                          Programado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3. BLOQUE EQUIPO VISITANTE (Vertical) */}
+                  <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px] relative">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
+                      {awayLogo ? (
+                        <img src={awayLogo} alt={g.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                      ) : (
+                        <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-[#E879F9] filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
+                      )}
+                    </div>
+                    <p className="font-black uppercase text-xs sm:text-base text-white tracking-wide leading-tight text-center break-words w-full px-0.5">
+                      {g.awayTeam}
+                    </p>
+                    <span className="inline-flex items-center text-[9px] sm:text-xs font-black text-[#E879F9] bg-fuchsia-950/90 border border-fuchsia-500/70 px-2 sm:px-3 py-0.5 rounded-lg uppercase tracking-widest shadow-sm">
+                      VISITANTE
+                    </span>
+
+                    {role === 'ADMIN' && (
+                      <button
+                        onClick={() => setQuickEditingGame(g)}
+                        className="absolute -top-2 -right-1 sm:-right-2 p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 border border-slate-700 hover:border-amber-400 transition-all shadow-md shrink-0"
+                        title="Edición rápida de partido"
+                      >
+                        <Edit className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
+                      </button>
                     )}
                   </div>
-                  <p className="font-black uppercase text-sm sm:text-base text-white tracking-wide leading-tight text-center break-words w-full">
-                    {g.homeTeam}
-                  </p>
-                  <span className="inline-flex items-center text-[10px] sm:text-xs font-black text-amber-400 bg-amber-950/90 border border-amber-500/70 px-3 py-0.5 rounded-lg uppercase tracking-widest shadow-sm">
-                    LOCAL
-                  </span>
                 </div>
 
-                {/* 2. BLOQUE MARCADOR / TIEMPO (Centro) */}
-                <div className="flex flex-col items-center justify-center px-2 sm:px-6 shrink-0 space-y-2.5">
-                  <div className="flex items-center gap-3 sm:gap-4 bg-slate-950/80 px-5 py-2.5 rounded-2xl border border-slate-800 shadow-inner">
-                    <span className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#00E676] min-w-[56px] text-right font-mono drop-shadow-[0_2px_12px_rgba(0,230,118,0.45)]">
-                      {g.homeScore}
-                    </span>
-                    <span className="text-amber-400 font-black text-2xl sm:text-3xl font-mono px-1">VS</span>
-                    <span className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#FF3D00] min-w-[56px] text-left font-mono drop-shadow-[0_2px_12px_rgba(255,61,0,0.45)]">
-                      {g.awayScore}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    {g.status === 'Finalizado' && (
-                      <span className="text-[10px] font-black uppercase px-3 py-0.5 rounded-full bg-yellow-950/80 border border-[#FFC107] text-[#FFC107] shadow-sm">
-                        Finalizado
-                      </span>
-                    )}
-                    {g.status === 'En Curso' && (
-                      <span className="text-[10px] font-black uppercase px-3 py-0.5 rounded-full bg-red-950/90 border border-[#FF3D00] text-[#FF3D00] animate-pulse shadow-sm">
-                        En Vivo
-                      </span>
-                    )}
-                    {g.status === 'Programado' && (
-                      <span className="text-[10px] font-black uppercase px-3 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
-                        Programado
-                      </span>
-                    )}
-                    <span className="text-[11px] text-slate-300 font-bold uppercase tracking-wider">
-                      {g.date} · {g.location}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. BLOQUE EQUIPO VISITANTE (Vertical) + Acción Rápida Admin */}
-                <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px] relative">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
-                    {awayLogo ? (
-                      <img src={awayLogo} alt={g.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                    ) : (
-                      <Trophy className="w-12 h-12 sm:w-14 sm:h-14 text-[#E879F9] filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.75)]" />
-                    )}
-                  </div>
-                  <p className="font-black uppercase text-sm sm:text-base text-white tracking-wide leading-tight text-center break-words w-full">
-                    {g.awayTeam}
-                  </p>
-                  <span className="inline-flex items-center text-[10px] sm:text-xs font-black text-[#E879F9] bg-fuchsia-950/90 border border-fuchsia-500/70 px-3 py-0.5 rounded-lg uppercase tracking-widest shadow-sm">
-                    VISITANTE
+                <div className="w-full pt-2 border-t border-slate-800/80 text-center">
+                  <span className="text-[10px] sm:text-[11px] text-slate-300 font-bold uppercase tracking-wider">
+                    {g.date} · {g.location} {g.time ? `· ${g.time}` : ''}
                   </span>
-
-                  {role === 'ADMIN' && (
-                    <button
-                      onClick={() => setQuickEditingGame(g)}
-                      className="absolute -top-2 -right-2 p-2 rounded-xl bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-300 border border-slate-700 hover:border-amber-400 transition-all shadow-md shrink-0"
-                      title="Edición rápida de partido"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -2851,51 +3177,51 @@ function CalendarView({
                   </div>
                 </div>
 
-                {/* Enfrentamiento Vertical 3 Columnas */}
-                <div className="flex flex-row items-center justify-between gap-4 sm:gap-6 pt-1">
+                {/* Enfrentamiento Vertical 3 Columnas Responsivo */}
+                <div className="grid grid-cols-3 md:flex md:flex-row items-center justify-between gap-2 sm:gap-6 pt-1 w-full max-w-full overflow-hidden">
                   {/* Local */}
-                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
                       {homeLogo ? (
                         <img src={homeLogo} alt={game.homeTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                       ) : (
-                        <Trophy className="w-10 h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
+                        <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-amber-400 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
                       )}
                     </div>
-                    <span className="font-black uppercase text-sm sm:text-base text-white block leading-tight text-center break-words w-full">
+                    <span className="font-black uppercase text-xs sm:text-base text-white block leading-tight text-center break-words w-full px-0.5">
                       {game.homeTeam}
                     </span>
-                    <span className="inline-block text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-950/80 border border-amber-500/50 px-2.5 py-0.5 rounded-lg">
+                    <span className="inline-block text-[9px] sm:text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-950/80 border border-amber-500/50 px-2 sm:px-2.5 py-0.5 rounded-lg">
                       LOCAL
                     </span>
                   </div>
 
                   {/* Marcador Central */}
-                  <div className="flex flex-col items-center justify-center shrink-0 space-y-1">
+                  <div className="flex flex-col items-center justify-center shrink-0 space-y-1 min-w-0">
                     {game.status === 'Finalizado' || game.status === 'En Curso' ? (
-                      <span className="font-black text-3xl sm:text-4xl text-amber-300 bg-slate-950 px-5 py-2 rounded-2xl border border-slate-800 shadow-inner font-mono inline-block">
+                      <span className="font-black text-2xl sm:text-4xl text-amber-300 bg-slate-950 px-3 sm:px-5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner font-mono inline-block">
                         {game.homeScore} – {game.awayScore}
                       </span>
                     ) : (
-                      <span className="font-black text-amber-400 text-xl sm:text-2xl bg-slate-950 px-4 py-2 rounded-2xl border border-slate-800">
+                      <span className="font-black text-amber-400 text-base sm:text-2xl bg-slate-950 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800">
                         VS
                       </span>
                     )}
                   </div>
 
                   {/* Visitante */}
-                  <div className="flex flex-col items-center text-center space-y-2 flex-1 min-w-[120px] max-w-[180px]">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
                       {awayLogo ? (
                         <img src={awayLogo} alt={game.awayTeam} className="w-full h-full max-w-full max-h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                       ) : (
-                        <Trophy className="w-10 h-10 text-[#E879F9] filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
+                        <Trophy className="w-8 h-8 sm:w-10 sm:h-10 text-[#E879F9] filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.75)]" />
                       )}
                     </div>
-                    <span className="font-black uppercase text-sm sm:text-base text-white block leading-tight text-center break-words w-full">
+                    <span className="font-black uppercase text-xs sm:text-base text-white block leading-tight text-center break-words w-full px-0.5">
                       {game.awayTeam}
                     </span>
-                    <span className="inline-block text-[10px] font-black text-[#E879F9] uppercase tracking-widest bg-fuchsia-950/80 border border-fuchsia-500/50 px-2.5 py-0.5 rounded-lg">
+                    <span className="inline-block text-[9px] sm:text-[10px] font-black text-[#E879F9] uppercase tracking-widest bg-fuchsia-950/80 border border-fuchsia-500/50 px-2 sm:px-2.5 py-0.5 rounded-lg">
                       VISITANTE
                     </span>
                   </div>

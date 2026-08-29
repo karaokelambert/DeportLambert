@@ -1166,3 +1166,98 @@ export function SettingsAppModal({
     </div>
   );
 }
+
+// ── 4. Modal de Sincronización en la Nube y Multi-Dispositivo ───
+export function CloudSyncModal({ 
+  isOpen, 
+  onClose,
+  syncStatus,
+  lastSyncTime,
+  onForceSync
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  syncStatus: 'synced' | 'syncing' | 'offline';
+  lastSyncTime: string;
+  onForceSync: () => void;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in" onClick={onClose}>
+      <div 
+        className="w-full max-w-lg bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-[0_0_50px_rgba(16,185,129,0.3)] text-slate-100 relative overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-[#00E676] to-cyan-500" />
+        
+        <button 
+          onClick={onClose}
+          className="absolute top-5 right-5 p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex items-center gap-3.5 mb-5">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-950/60 p-2">
+            <Globe className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-xl font-black uppercase tracking-wide text-white">Sincronización en Tiempo Real</h3>
+            <p className="text-xs text-emerald-400 font-bold">Multi-Dispositivo · Teléfonos y Computadoras</p>
+          </div>
+        </div>
+
+        {/* Estado actual */}
+        <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3 mb-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-bold text-slate-400">Estado de Conexión:</span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase ${
+              syncStatus === 'synced'
+                ? 'bg-emerald-950 border border-emerald-500 text-[#00E676]'
+                : syncStatus === 'syncing'
+                ? 'bg-amber-950 border border-amber-500 text-amber-300 animate-pulse'
+                : 'bg-red-950 border border-red-500 text-red-400'
+            }`}>
+              <span className="h-2 w-2 rounded-full bg-current" />
+              {syncStatus === 'synced' ? 'Nube Conectada y Sincronizada' : syncStatus === 'syncing' ? 'Transmitiendo Datos...' : 'Modo Offline / Local'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Última sincronización:</span>
+            <span className="font-mono text-slate-200 font-bold">{lastSyncTime || 'Recién iniciada'}</span>
+          </div>
+        </div>
+
+        {/* Explicación de funcionamiento */}
+        <div className="space-y-3 mb-6 text-xs text-slate-300 leading-relaxed">
+          <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-start gap-3">
+            <Smartphone className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-black uppercase text-white mb-0.5">Sincronización Automática entre Teléfonos</p>
+              <p className="text-slate-300">Cada vez que un administrador actualiza un marcador, registra un juego o modifica un equipo, los cambios se transmiten instantáneamente a todos los teléfonos y pantallas conectadas.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Botón de Sincronización Forzada */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => { onForceSync(); onClose(); }}
+            className="flex-1 py-3 px-4 rounded-xl font-black uppercase text-xs tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-all"
+          >
+            <Check className="w-4 h-4 stroke-[3]" /> Sincronizar Ahora
+          </button>
+          <button
+            onClick={onClose}
+            className="py-3 px-5 rounded-xl font-bold uppercase text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
