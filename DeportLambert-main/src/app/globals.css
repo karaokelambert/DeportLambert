@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  background-color: #70B6E8;
+  color: #f8fafc;
+  overflow-x: hidden;
+}
+
+/* ── Fondo Global Sky Blue con Degradado Suave ── */
+.bg-app-sky {
+  background-color: #70B6E8;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(255, 255, 255, 0.35) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(15, 23, 42, 0.12) 0%, transparent 45%),
+    linear-gradient(180deg, #70B6E8 0%, #5ba4dc 100%);
+  min-height: 100vh;
+}
+
+/* ── Tarjetas y Contenedores Noche / Azul Marino Muy Oscuro ── */
+.bg-night-card {
+  background-color: #0F172A;
+}
+
+/* ── Fondo Portal con degradado ── */
+.bg-sports-portal {
+  background-color: #70B6E8;
+  min-height: 100vh;
+}
+
+/* Patrón geométrico de líneas semitransparentes de balones deportivos */
+.sports-grid-pattern {
+  background-image: 
+    radial-gradient(circle at 25px 25px, rgba(255, 255, 255, 0.04) 2px, transparent 0),
+    url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='0.75' stroke-opacity='0.06'%3E%3C!-- Balón de Fútbol Hexágonos --%3E%3Ccircle cx='30' cy='30' r='22'/%3E%3Cpolygon points='30,18 39,24 36,34 24,34 21,24'/%3E%3Cline x1='30' y1='8' x2='30' y2='18'/%3E%3Cline x1='48' y1='17' x2='39' y2='24'/%3E%3Cline x1='45' y1='44' x2='36' y2='34'/%3E%3Cline x1='15' y1='44' x2='24' y2='34'/%3E%3Cline x1='12' y1='17' x2='21' y2='24'/%3E%3C!-- Balón de Baloncesto Líneas --%3E%3Ccircle cx='90' cy='90' r='22'/%3E%3Cline x1='68' y1='90' x2='112' y2='90'/%3E%3Cline x1='90' y1='68' x2='90' y2='112'/%3E%3Cpath d='M75,72 Q90,90 75,108'/%3E%3Cpath d='M105,72 Q90,90 105,108'/%3E%3C!-- Balón de Béisbol Costuras --%3E%3Ccircle cx='90' cy='30' r='18'/%3E%3Cpath d='M78,16 Q90,30 78,44' stroke-dasharray='2,2'/%3E%3Cpath d='M102,16 Q90,30 102,44' stroke-dasharray='2,2'/%3E%3C!-- Cancha / Grid --%3E%3Crect x='10' y='70' width='40' height='40' rx='4'/%3E%3Ccircle cx='30' cy='90' r='8'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 50px 50px, 120px 120px;
+}
+
+/* ── Efectos de Tipografía con Borde de Línea Negro ── */
+.text-stroke-black {
+  -webkit-text-stroke: 1.5px #000000;
+  paint-order: stroke fill;
+  text-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.9),
+    0 4px 12px rgba(0, 0, 0, 0.8);
+}
+
+.text-stroke-black-lg {
+  -webkit-text-stroke: 2px #000000;
+  paint-order: stroke fill;
+  text-shadow: 
+    0 3px 6px rgba(0, 0, 0, 0.95),
+    0 8px 20px rgba(0, 0, 0, 0.85);
+}
+
+.text-stroke-orange {
+  -webkit-text-stroke: 1.2px #ea580c;
+  paint-order: stroke fill;
+  text-shadow: 0 0 16px rgba(249, 115, 22, 0.6);
+}
+
+/* ── Tarjetas Cristal Metálico con Bisel Neón Reflectante ── */
+.card-metallic-crystal {
+  background: linear-gradient(165deg, rgba(15, 28, 55, 0.85) 0%, rgba(10, 18, 38, 0.92) 50%, rgba(8, 14, 29, 0.96) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  position: relative;
+  box-shadow: 
+    0 20px 40px -15px rgba(0, 0, 0, 0.7),
+    0 0 25px -5px rgba(14, 165, 233, 0.25),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 8px 0 rgba(0, 0, 0, 0.5);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-metallic-crystal:hover {
+  transform: translateY(-6px) scale(1.015);
+  box-shadow: 
+    0 28px 50px -15px rgba(0, 0, 0, 0.85),
+    0 0 35px 2px rgba(16, 185, 129, 0.35),
+    0 0 45px 0px rgba(249, 115, 22, 0.3),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 20px 2px rgba(14, 165, 233, 0.2);
+}
+
+/* Bisel con borde degradado brillante */
+.card-neon-border {
+  position: relative;
+}
+
+.card-neon-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 1.6rem;
+  padding: 2px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(14, 165, 233, 0.7), rgba(249, 115, 22, 0.8), rgba(168, 85, 247, 0.9));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
+}
+
+.card-neon-border:hover::before {
+  opacity: 1;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.7));
+}
+
+/* ── Botón Verde Neón con Borde Naranja Brillante ── */
+.btn-neon-action {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  border: 2.5px solid #f97316;
+  box-shadow: 
+    0 0 18px rgba(249, 115, 22, 0.65),
+    0 4px 14px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  transition: all 0.25s ease;
+}
+
+.btn-neon-action:hover {
+  background: linear-gradient(180deg, #34d399 0%, #10b981 100%);
+  border-color: #ff8c38;
+  box-shadow: 
+    0 0 28px rgba(249, 115, 22, 0.95),
+    0 0 15px rgba(52, 211, 153, 0.6),
+    0 6px 20px rgba(0, 0, 0, 0.6);
+  transform: translateY(-2px);
+}
+
+.btn-neon-action:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
+}
+
+/* ── Botones Metálicos Dorados del Navbar ── */
+.btn-gold-metallic {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1.5px solid #f59e0b;
+  box-shadow: 
+    0 0 12px rgba(245, 158, 11, 0.35),
+    inset 0 1px 1px rgba(251, 191, 36, 0.4);
+  transition: all 0.25s ease;
+}
+
+.btn-gold-metallic:hover {
+  border-color: #fbbf24;
+  box-shadow: 
+    0 0 20px rgba(245, 158, 11, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-gold-gradient {
+  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 50%, #d97706 100%);
+  border: 1.5px solid #fef08a;
+  box-shadow: 
+    0 0 16px rgba(245, 158, 11, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+  transition: all 0.25s ease;
+}
+
+.btn-gold-gradient:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f97316 50%, #f59e0b 100%);
+  box-shadow: 
+    0 0 25px rgba(245, 158, 11, 0.8),
+    0 6px 14px rgba(0, 0, 0, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ── Scrollbar moderno oscuro ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0284c7;
+}
+
+/* ── Animaciones ── */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px #10b981); }
+  50% { opacity: 0.7; filter: drop-shadow(0 0 2px #10b981); }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: floatSlow 4s ease-in-out infinite;
+}

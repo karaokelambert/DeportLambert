@@ -1,0 +1,24 @@
+studio-1855710819:~/studio{main}$ head -n 300 src/app/page.tsx
+import SportsManager from '@/components/SportsManager';
+
+export default function Home() {
+  return (
+    <main className="min-h-screen relative overflow-hidden selection:bg-primary/30">
+      {/* Background patterns */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/10 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-secondary/10 blur-[120px] rounded-full" />
+      </div>
+
+      <div className="relative z-10 w-full">
+        <SportsManager />
+      </div>
+      
+      <footer className="fixed bottom-0 left-0 w-full p-2 text-center z-30 pointer-events-none">
+        <p className="text-[8px] uppercase tracking-[0.3em] font-bold text-muted-foreground/30 font-headline">
+          SIGAE DEPORTES • Sistema Institucional de Gestión v2.0
+        </p>
+      </footer>
+    </main>
+  );
+}studio-1855710819:~/studio{main}$ 
