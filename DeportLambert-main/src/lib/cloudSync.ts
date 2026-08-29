@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * JL Sports Club 360 – Realtime Cloud Sync Engine v3
- * Enables instant multi-device synchronization across PCs, iPhones, Androids, and tablets.
+ * JL Sports Club 360 – Realtime Cloud Sync Engine (Supabase + Multi-Device Relay)
+ * Ensures instant global synchronization across PCs, iPhones, Androids, and tablets.
  */
+
+import { getSupabaseClient, getStoredSupabaseConfig } from './supabaseClient';
 
 export interface CloudTournamentState {
   version: number;
@@ -24,30 +26,31 @@ const STORAGE_KEYS = [
   'deportlambert_tournament_state'
 ];
 
-const CONFIG_KEY = 'jl360_sync_config_v3';
-// Global deterministic master object ID shared across all devices worldwide
+const CONFIG_KEY = 'jl360_sync_config_v4';
 const MASTER_OBJECT_ID = 'ff808181a04ccf2d01a04fc723fd0e1b';
 const CLOUD_SYNC_ENDPOINT = 'https://api.restful-api.dev/objects';
 
 export interface SyncConfig {
   enabled: boolean;
   channelId: string;
-  customEndpoint?: string;
   supabaseUrl?: string;
   supabaseKey?: string;
-  firebaseUrl?: string;
   lastSyncedAt?: number;
 }
 
 export function getSyncConfig(): SyncConfig {
+  const spConfig = getStoredSupabaseConfig();
   if (typeof window === 'undefined') {
-    return { enabled: true, channelId: 'deportlambert_tournament_2026' };
+    return { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
   }
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...parsed, supabaseUrl: parsed.supabaseUrl || spConfig.url, supabaseKey: parsed.supabaseKey || spConfig.key };
+    }
   } catch (e) {}
-  return { enabled: true, channelId: 'deportlambert_tournament_2026' };
+  return { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
 }
 
 export function saveSyncConfig(config: SyncConfig) {
@@ -68,7 +71,7 @@ export function getLocalState(): CloudTournamentState | null {
           if (parsed.disciplineData) return parsed;
           if (parsed.baloncesto || parsed.futsal || parsed.voleibol) {
             return {
-              version: 3,
+              version: 4,
               updatedAt: Date.now(),
               disciplineData: parsed
             };
@@ -101,21 +104,53 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   } catch (e) {}
 }
 
-export function subscribeToLocalBroadcast(onMessage: (state: CloudTournamentState) => void) {
-  if (!broadcastChannel) return () => {};
-  const handler = (event: MessageEvent) => {
-    if (event.data && event.data.type === 'STATE_UPDATE' && event.data.state) {
-      onMessage(event.data.state);
+/**
+ * Realtime subscription via Supabase Channel + BroadcastChannel
+ */
+export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentState) => void): () => void {
+  const cleanups: (() => void)[] = [];
+
+  // 1. Cross-tab Broadcast
+  if (broadcastChannel) {
+    const bHandler = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'STATE_UPDATE' && event.data.state) {
+        onUpdate(event.data.state);
+      }
+    };
+    broadcastChannel.addEventListener('message', bHandler);
+    cleanups.push(() => broadcastChannel?.removeEventListener('message', bHandler));
+  }
+
+  // 2. Supabase Realtime Channel
+  try {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const cfg = getSyncConfig();
+      const channel = supabase.channel(`live_tourney_${cfg.channelId || 'deportlambert'}`)
+        .on('broadcast', { event: 'state_update' }, (payload) => {
+          if (payload && payload.payload) {
+            onUpdate(payload.payload as CloudTournamentState);
+          }
+        })
+        .subscribe((status) => {
+          console.log('[Supabase Realtime] Canal status:', status);
+        });
+
+      cleanups.push(() => {
+        supabase.removeChannel(channel);
+      });
     }
-  };
-  broadcastChannel.addEventListener('message', handler);
+  } catch (e) {
+    console.warn('[Supabase Realtime] Fallback a polling:', e);
+  }
+
   return () => {
-    broadcastChannel?.removeEventListener('message', handler);
+    cleanups.forEach(fn => fn());
   };
 }
 
 /**
- * Push tournament state to the global cloud database & all devices
+ * Push tournament state to the cloud (Supabase Realtime + Global Cloud Relay)
  */
 export async function pushStateToCloud(state: CloudTournamentState, config?: SyncConfig): Promise<boolean> {
   saveLocalState(state);
@@ -127,11 +162,25 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
     } catch (e) {}
   }
 
+  // Broadcast through Supabase Realtime Channel
+  try {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const cfg = config || getSyncConfig();
+      const channel = supabase.channel(`live_tourney_${cfg.channelId || 'deportlambert'}`);
+      await channel.send({
+        type: 'broadcast',
+        event: 'state_update',
+        payload: state
+      });
+    }
+  } catch (e) {}
+
   const cfg = config || getSyncConfig();
   if (!cfg.enabled) return true;
 
   try {
-    // 1. Supabase REST API (if user configured)
+    // 1. Supabase REST Persistence
     if (cfg.supabaseUrl && cfg.supabaseKey) {
       try {
         const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync`;
@@ -143,24 +192,12 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
             'Authorization': `Bearer ${cfg.supabaseKey}`,
             'Prefer': 'resolution=merge-duplicates'
           },
-          body: JSON.stringify({ id: cfg.channelId, data: state, updated_at: new Date().toISOString() })
+          body: JSON.stringify({ id: cfg.channelId || 'deportlambert_live', data: state, updated_at: new Date().toISOString() })
         });
       } catch (e) {}
     }
 
-    // 2. Custom Firebase Realtime Database (if user configured)
-    if (cfg.firebaseUrl) {
-      try {
-        const url = cfg.firebaseUrl.replace(/\/$/, '') + `/tournaments/${cfg.channelId}.json`;
-        await fetch(url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state),
-        });
-      } catch (e) {}
-    }
-
-    // 3. Global Cloud Relay (Universal Multi-Device Sync Channel)
+    // 2. Global Cloud Relay (Universal Multi-Device Sync Channel)
     const payload = {
       name: `JL360_${cfg.channelId || 'deportlambert_tournament_2026'}`,
       data: {
@@ -180,23 +217,23 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
       return true;
     }
   } catch (error) {
-    console.warn('[CloudSync] Fallo en push a la nube, guardado localmente:', error);
+    console.warn('[CloudSync] Guardado localmente:', error);
   }
   return false;
 }
 
 /**
- * Fetch latest tournament state from the global cloud database
+ * Fetch latest tournament state from the cloud database
  */
 export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTournamentState | null> {
   const cfg = config || getSyncConfig();
   if (!cfg.enabled) return getLocalState();
 
   try {
-    // 1. Supabase REST (if configured)
+    // 1. Supabase REST query
     if (cfg.supabaseUrl && cfg.supabaseKey) {
       try {
-        const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync?id=eq.${cfg.channelId}&select=*`;
+        const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync?id=eq.${cfg.channelId || 'deportlambert_live'}&select=*`;
         const res = await fetch(url, {
           headers: {
             'apikey': cfg.supabaseKey,
@@ -211,19 +248,7 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
       } catch (e) {}
     }
 
-    // 2. Firebase Realtime DB (if configured)
-    if (cfg.firebaseUrl) {
-      try {
-        const url = cfg.firebaseUrl.replace(/\/$/, '') + `/tournaments/${cfg.channelId}.json`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.updatedAt) return data;
-        }
-      } catch (e) {}
-    }
-
-    // 3. Global Cloud Relay (Universal Multi-Device Sync Channel)
+    // 2. Global Cloud Relay Query
     const res = await fetch(`${CLOUD_SYNC_ENDPOINT}/${MASTER_OBJECT_ID}?t=${Date.now()}`, { 
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache' }
@@ -237,7 +262,7 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
       }
     }
   } catch (error) {
-    console.warn('[CloudSync] Error en fetch de la nube:', error);
+    console.warn('[CloudSync] Error al descargar de la nube:', error);
   }
 
   return getLocalState();

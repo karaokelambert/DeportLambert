@@ -90,7 +90,7 @@ import {
   getLocalState,
   saveLocalState,
   getSyncConfig, 
-  subscribeToLocalBroadcast,
+  subscribeToRealtimeUpdates,
   SyncConfig, 
   CloudTournamentState 
 } from '../lib/cloudSync';
@@ -351,9 +351,9 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Escuchar actualizaciones instantáneas de otras pestañas en el mismo navegador
+  // Escuchar actualizaciones en tiempo real (Supabase Channel + Broadcast)
   useEffect(() => {
-    const unsub = subscribeToLocalBroadcast((remote) => {
+    const unsub = subscribeToRealtimeUpdates((remote) => {
       if (remote && remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current) {
         if (remote.disciplineData) setDisciplineData(remote.disciplineData);
         if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
