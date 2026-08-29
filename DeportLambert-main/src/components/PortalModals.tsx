@@ -1167,13 +1167,13 @@ export function SettingsAppModal({
   );
 }
 
-// ── 4. Modal de Sincronización en la Nube y Multi-Dispositivo ───
-export function CloudSyncModal({ 
-  isOpen, 
+// ── 4. Modal de Sincronización en la Nube y Multi-Dispositivo (Supabase Realtime) ───
+export function CloudSyncModal({
+  isOpen,
   onClose,
   syncStatus,
   lastSyncTime,
-  onForceSync
+  onForceSync,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1181,12 +1181,51 @@ export function CloudSyncModal({
   lastSyncTime: string;
   onForceSync: () => void;
 }) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [spUrl, setSpUrl] = useState('');
+  const [spKey, setSpKey] = useState('');
+  const [spChannel, setSpChannel] = useState('deportlambert_live');
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('jl360_supabase_config_v2');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setSpUrl(parsed.url || '');
+          setSpKey(parsed.key || '');
+          setSpChannel(parsed.channel || 'deportlambert_live');
+        } catch (e) {}
+      } else {
+        setSpUrl(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co');
+        setSpKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sample_anon_key');
+        setSpChannel('deportlambert_live');
+      }
+    }
+  }, [isOpen]);
+
+  const handleSaveConfig = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('jl360_supabase_config_v2', JSON.stringify({
+        url: spUrl.trim(),
+        key: spKey.trim(),
+        channel: spChannel.trim() || 'deportlambert_live'
+      }));
+      setSavedSuccess(true);
+      setTimeout(() => {
+        setSavedSuccess(false);
+        onForceSync();
+      }, 1000);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in" onClick={onClose}>
       <div 
-        className="w-full max-w-lg bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-[0_0_50px_rgba(16,185,129,0.3)] text-slate-100 relative overflow-hidden"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 sm:p-8 shadow-[0_0_50px_rgba(16,185,129,0.3)] text-slate-100 relative"
         onClick={e => e.stopPropagation()}
       >
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-[#00E676] to-cyan-500" />
@@ -1204,7 +1243,7 @@ export function CloudSyncModal({
           </div>
           <div>
             <h3 className="text-xl font-black uppercase tracking-wide text-white">Sincronización en Tiempo Real</h3>
-            <p className="text-xs text-emerald-400 font-bold">Multi-Dispositivo · Teléfonos y Computadoras</p>
+            <p className="text-xs text-emerald-400 font-bold">Supabase Realtime · Teléfonos y Computadoras</p>
           </div>
         </div>
 
@@ -1231,14 +1270,77 @@ export function CloudSyncModal({
         </div>
 
         {/* Explicación de funcionamiento */}
-        <div className="space-y-3 mb-6 text-xs text-slate-300 leading-relaxed">
+        <div className="space-y-3 mb-5 text-xs text-slate-300 leading-relaxed">
           <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-start gap-3">
             <Smartphone className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-black uppercase text-white mb-0.5">Sincronización Automática entre Teléfonos</p>
-              <p className="text-slate-300">Cada vez que un administrador actualiza un marcador, registra un juego o modifica un equipo, los cambios se transmiten instantáneamente a todos los teléfonos y pantallas conectadas.</p>
+              <p className="font-black uppercase text-white mb-0.5">Sincronización Instantánea Supabase</p>
+              <p className="text-slate-300">Cada vez que un administrador registra o modifica un marcador, se transmite por WebSockets en tiempo real a todas las pantallas y teléfonos conectados simultáneamente.</p>
             </div>
           </div>
+        </div>
+
+        {/* Toggle Ajustes de Supabase */}
+        <div className="mb-5 border-t border-slate-800/80 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-xs font-bold text-slate-400 hover:text-emerald-400 flex items-center justify-between w-full"
+          >
+            <span>⚙️ Configuración del Proyecto Supabase (Opcional)</span>
+            <span>{showAdvanced ? '▲ Ocultar' : '▼ Ver Credenciales'}</span>
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 space-y-3 p-3.5 bg-slate-950/90 rounded-2xl border border-slate-800">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
+                  NEXT_PUBLIC_SUPABASE_URL
+                </label>
+                <input
+                  type="text"
+                  value={spUrl}
+                  onChange={e => setSpUrl(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY
+                </label>
+                <input
+                  type="password"
+                  value={spKey}
+                  onChange={e => setSpKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
+                  Canal Realtime (ID del Torneo)
+                </label>
+                <input
+                  type="text"
+                  value={spChannel}
+                  onChange={e => setSpChannel(e.target.value)}
+                  placeholder="deportlambert_live"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black uppercase text-xs rounded-xl shadow transition-colors"
+              >
+                {savedSuccess ? '✓ Credenciales Guardadas' : 'Guardar y Reconectar Supabase'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Botón de Sincronización Forzada */}

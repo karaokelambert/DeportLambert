@@ -2,12 +2,11 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Default pre-configured cloud project for JL Sports Club 360
-// Users can also override this from the SuperAdmin/Sync settings in the UI
-const DEFAULT_SUPABASE_URL = 'https://kwjoxqydwquztdjrlfxg.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3am94cXlkd3F1enRkanJsZnhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4NTYwMDAsImV4cCI6MjAyNTQzMjAwMH0.sample_public_anon_key_for_broadcast';
+// Read from Environment Variables or pre-configured cloud endpoint
+const ENV_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co';
+const ENV_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3am94cXlkd3F1enRkanJsZnhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4NTYwMDAsImV4cCI6MjAyNTQzMjAwMH0.sample_public_anon_key_for_broadcast';
 
-const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v1';
+const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v2';
 
 export interface SupabaseConfig {
   url: string;
@@ -17,7 +16,7 @@ export interface SupabaseConfig {
 
 export function getStoredSupabaseConfig(): SupabaseConfig {
   if (typeof window === 'undefined') {
-    return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
+    return { url: ENV_SUPABASE_URL, key: ENV_SUPABASE_KEY, channel: 'deportlambert_live' };
   }
   try {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
@@ -26,7 +25,7 @@ export function getStoredSupabaseConfig(): SupabaseConfig {
       if (parsed.url && parsed.key) return parsed;
     }
   } catch (e) {}
-  return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
+  return { url: ENV_SUPABASE_URL, key: ENV_SUPABASE_KEY, channel: 'deportlambert_live' };
 }
 
 export function saveStoredSupabaseConfig(config: SupabaseConfig) {
@@ -60,5 +59,45 @@ export function getSupabaseClient(): SupabaseClient | null {
   } catch (e) {
     console.warn('[Supabase] Error inicializando cliente:', e);
     return null;
+  }
+}
+
+// ── Helpers directos de Supabase para Tablas 'partidos', 'equipos', 'posiciones', 'tournament_sync' ──
+
+export async function fetchSupabaseTournamentState(channelId: string = 'deportlambert_live'): Promise<any | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('tournament_sync')
+      .select('data, updated_at')
+      .eq('id', channelId)
+      .maybeSingle();
+
+    if (!error && data && data.data) {
+      return data.data;
+    }
+  } catch (e) {
+    console.warn('[Supabase] tournament_sync query falló:', e);
+  }
+  return null;
+}
+
+export async function saveSupabaseTournamentState(channelId: string = 'deportlambert_live', state: any): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client
+      .from('tournament_sync')
+      .upsert({
+        id: channelId,
+        data: state,
+        updated_at: new Date().toISOString()
+      });
+
+    return !error;
+  } catch (e) {
+    console.warn('[Supabase] Error en upsert tournament_sync:', e);
+    return false;
   }
 }
