@@ -90,6 +90,7 @@ import {
   getLocalState,
   saveLocalState,
   getSyncConfig, 
+  subscribeToLocalBroadcast,
   SyncConfig, 
   CloudTournamentState 
 } from '../lib/cloudSync';
@@ -350,7 +351,23 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Polling periódico cada 4s para sincronizar marcadores y juegos desde otros teléfonos
+  // Escuchar actualizaciones instantáneas de otras pestañas en el mismo navegador
+  useEffect(() => {
+    const unsub = subscribeToLocalBroadcast((remote) => {
+      if (remote && remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current) {
+        if (remote.disciplineData) setDisciplineData(remote.disciplineData);
+        if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+        if (remote.branding) setBranding(remote.branding);
+        if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+        localUpdatedAtRef.current = remote.updatedAt;
+        setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
+        setSyncStatus('synced');
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Polling periódico rápido cada 2.5s para sincronizar marcadores y juegos entre PC y teléfonos
   useEffect(() => {
     const timer = setInterval(async () => {
       if (!syncConfig.enabled) return;
@@ -367,24 +384,24 @@ export default function SportsManager() {
           setSyncStatus('synced');
         }
       } catch (e) {}
-    }, 4000);
+    }, 2500);
 
     return () => clearInterval(timer);
   }, [syncConfig]);
 
   // Función de sincronización forzada a demanda
-  const triggerPushSync = useCallback(async () => {
+  const triggerPushSync = useCallback(async (customData?: Partial<CloudTournamentState>) => {
     const now = Date.now();
     localUpdatedAtRef.current = now;
     setSyncStatus('syncing');
     const payload: CloudTournamentState = {
-      version: 2,
+      version: 3,
       updatedAt: now,
       updatedBy: userName || role,
-      disciplineData,
-      disciplinesList,
-      branding,
-      registeredAdmins,
+      disciplineData: customData?.disciplineData || disciplineData,
+      disciplinesList: customData?.disciplinesList || disciplinesList,
+      branding: customData?.branding || branding,
+      registeredAdmins: customData?.registeredAdmins || registeredAdmins,
     };
     const ok = await pushStateToCloud(payload, syncConfig);
     setSyncStatus(ok ? 'synced' : 'offline');
@@ -396,7 +413,7 @@ export default function SportsManager() {
     if (!isHydratedRef.current) return;
     const t = setTimeout(() => {
       triggerPushSync();
-    }, 1000);
+    }, 600);
     return () => clearTimeout(t);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
 
@@ -1558,30 +1575,32 @@ function DashboardView({
                     </span>
                   </div>
 
-                  {/* 2. BLOQUE MARCADOR / TIEMPO (Centro) */}
-                  <div className="flex flex-col items-center justify-center px-1 sm:px-4 shrink-0 space-y-1 sm:space-y-2 min-w-0">
-                    <div className="flex items-center gap-1.5 sm:gap-4 bg-slate-950/80 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner">
-                      <span className="text-2xl sm:text-4xl md:text-5xl font-black text-[#00E676] min-w-[32px] sm:min-w-[56px] text-right font-mono drop-shadow-[0_2px_12px_rgba(0,230,118,0.45)]">
+                  {/* 2. BLOQUE MARCADOR / TIEMPO (Centro) - SIEMPRE EN UNA SOLA LÍNEA HORIZONTAL */}
+                  <div className="flex flex-col items-center justify-center px-1 shrink-0 space-y-1.5 min-w-fit">
+                    <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap bg-slate-950/90 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
+                      <span className="text-xl sm:text-3xl md:text-5xl font-black text-[#00E676] font-mono drop-shadow-[0_2px_8px_rgba(0,230,118,0.45)] whitespace-nowrap leading-none">
                         {g.homeScore}
                       </span>
-                      <span className="text-amber-400 font-black text-sm sm:text-2xl font-mono px-0.5 sm:px-1">VS</span>
-                      <span className="text-2xl sm:text-4xl md:text-5xl font-black text-[#FF3D00] min-w-[32px] sm:min-w-[56px] text-left font-mono drop-shadow-[0_2px_12px_rgba(255,61,0,0.45)]">
+                      <span className="text-amber-400 font-black text-xs sm:text-2xl font-mono px-1 sm:px-2 whitespace-nowrap leading-none">
+                        -
+                      </span>
+                      <span className="text-xl sm:text-3xl md:text-5xl font-black text-[#FF3D00] font-mono drop-shadow-[0_2px_8px_rgba(255,61,0,0.45)] whitespace-nowrap leading-none">
                         {g.awayScore}
                       </span>
                     </div>
-                    <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2">
+                    <div className="flex flex-row flex-wrap items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
                       {g.status === 'Finalizado' && (
-                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-yellow-950/80 border border-[#FFC107] text-[#FFC107] shadow-sm">
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-yellow-950/80 border border-[#FFC107] text-[#FFC107] shadow-sm whitespace-nowrap">
                           Finalizado
                         </span>
                       )}
                       {g.status === 'En Curso' && (
-                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-red-950/90 border border-[#FF3D00] text-[#FF3D00] animate-pulse shadow-sm">
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-red-950/90 border border-[#FF3D00] text-[#FF3D00] animate-pulse shadow-sm whitespace-nowrap">
                           En Vivo
                         </span>
                       )}
                       {g.status === 'Programado' && (
-                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                        <span className="text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-3 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 whitespace-nowrap">
                           Programado
                         </span>
                       )}
@@ -3196,14 +3215,16 @@ function CalendarView({
                     </span>
                   </div>
 
-                  {/* Marcador Central */}
-                  <div className="flex flex-col items-center justify-center shrink-0 space-y-1 min-w-0">
+                  {/* Marcador Central - SIEMPRE EN UNA SOLA LÍNEA HORIZONTAL */}
+                  <div className="flex flex-col items-center justify-center shrink-0 space-y-1 min-w-fit px-1">
                     {game.status === 'Finalizado' || game.status === 'En Curso' ? (
-                      <span className="font-black text-2xl sm:text-4xl text-amber-300 bg-slate-950 px-3 sm:px-5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner font-mono inline-block">
-                        {game.homeScore} – {game.awayScore}
-                      </span>
+                      <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap font-mono font-black text-lg sm:text-3xl md:text-4xl text-amber-300 bg-slate-950 px-2.5 sm:px-5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
+                        <span className="text-[#00E676] whitespace-nowrap">{game.homeScore}</span>
+                        <span className="px-1 text-amber-500/80 whitespace-nowrap">-</span>
+                        <span className="text-[#FF3D00] whitespace-nowrap">{game.awayScore}</span>
+                      </div>
                     ) : (
-                      <span className="font-black text-amber-400 text-base sm:text-2xl bg-slate-950 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800">
+                      <span className="font-black text-amber-400 text-xs sm:text-xl bg-slate-950 px-3 sm:px-4 py-1 sm:py-1.5 rounded-xl border border-slate-800 whitespace-nowrap">
                         VS
                       </span>
                     )}
