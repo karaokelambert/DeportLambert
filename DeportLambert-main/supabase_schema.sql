@@ -1,6 +1,7 @@
 -- ==============================================================================
 -- JL Sports Club 360 – Esquema de Tablas para Supabase Realtime Database
--- Ejecuta este script en el SQL Editor de tu proyecto en Supabase (supabase.com)
+-- Proyecto Supabase: https://nhurcieffcazroqfarrh.supabase.co
+-- Copia y ejecuta este script en el SQL Editor de tu Dashboard de Supabase.
 -- ==============================================================================
 
 -- 1. Tabla de Equipos
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS public.partidos (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Tabla de Tabla de Posiciones
+-- 3. Tabla de Posiciones / Tabla General
 CREATE TABLE IF NOT EXISTS public.posiciones (
     id TEXT PRIMARY KEY,
     discipline TEXT NOT NULL DEFAULT 'baloncesto',
@@ -62,6 +63,13 @@ CREATE TABLE IF NOT EXISTS public.tournament_sync (
 );
 
 -- ==============================================================================
+-- Índices para optimización de consultas
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_equipos_discipline ON public.equipos(discipline);
+CREATE INDEX IF NOT EXISTS idx_partidos_discipline ON public.partidos(discipline);
+CREATE INDEX IF NOT EXISTS idx_posiciones_discipline ON public.posiciones(discipline);
+
+-- ==============================================================================
 -- Políticas de Seguridad RLS (Row Level Security)
 -- Permitir lectura y escritura pública para tiempo real instantáneo
 -- ==============================================================================
@@ -71,20 +79,44 @@ ALTER TABLE public.partidos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posiciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_sync ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Lectura pública de equipos" ON public.equipos;
+DROP POLICY IF EXISTS "Escritura pública de equipos" ON public.equipos;
 CREATE POLICY "Lectura pública de equipos" ON public.equipos FOR SELECT USING (true);
 CREATE POLICY "Escritura pública de equipos" ON public.equipos FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Lectura pública de partidos" ON public.partidos;
+DROP POLICY IF EXISTS "Escritura pública de partidos" ON public.partidos;
 CREATE POLICY "Lectura pública de partidos" ON public.partidos FOR SELECT USING (true);
 CREATE POLICY "Escritura pública de partidos" ON public.partidos FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Lectura pública de posiciones" ON public.posiciones;
+DROP POLICY IF EXISTS "Escritura pública de posiciones" ON public.posiciones;
 CREATE POLICY "Lectura pública de posiciones" ON public.posiciones FOR SELECT USING (true);
 CREATE POLICY "Escritura pública de posiciones" ON public.posiciones FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Lectura pública de sync" ON public.tournament_sync;
+DROP POLICY IF EXISTS "Escritura pública de sync" ON public.tournament_sync;
 CREATE POLICY "Lectura pública de sync" ON public.tournament_sync FOR SELECT USING (true);
 CREATE POLICY "Escritura pública de sync" ON public.tournament_sync FOR ALL USING (true);
 
+-- ==============================================================================
 -- Habilitar Publicación en Tiempo Real (Realtime)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.equipos;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.partidos;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.posiciones;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_sync;
+-- ==============================================================================
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'equipos') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.equipos;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'partidos') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.partidos;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'posiciones') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.posiciones;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'tournament_sync') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_sync;
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL;
+END $$;

@@ -1198,8 +1198,8 @@ export function CloudSyncModal({
           setSpChannel(parsed.channel || 'deportlambert_live');
         } catch (e) {}
       } else {
-        setSpUrl(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co');
-        setSpKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sample_anon_key');
+        setSpUrl(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nhurcieffcazroqfarrh.supabase.co');
+        setSpKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'Sb_publishable_mPalpF6GtAfQu1h21M7jrA_Iq8-ccUZ');
         setSpChannel('deportlambert_live');
       }
     }

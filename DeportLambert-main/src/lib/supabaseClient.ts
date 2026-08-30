@@ -3,8 +3,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Read from Environment Variables or configured default endpoint
-const DEFAULT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co';
-const DEFAULT_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3am94cXlkd3F1enRkanJsZnhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4NTYwMDAsImV4cCI6MjAyNTQzMjAwMH0.sample_public_anon_key_for_broadcast';
+const DEFAULT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nhurcieffcazroqfarrh.supabase.co';
+const DEFAULT_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'Sb_publishable_mPalpF6GtAfQu1h21M7jrA_Iq8-ccUZ';
 
 const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v2';
 
@@ -156,6 +156,93 @@ export async function syncTeamsToSupabaseTable(discipline: string, teams: any[])
 
     const { error } = await client
       .from('equipos')
+      .upsert(rows, { onConflict: 'id' });
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function syncStandingsToSupabaseTable(discipline: string, teams: any[], games: any[], groups: string[] = ['Grupo A', 'Grupo B']): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !teams || teams.length === 0) return false;
+  try {
+    const groupMap: Record<string, Record<string, any>> = {};
+    groups.forEach(g => { groupMap[g] = {}; });
+
+    teams.forEach(team => {
+      const g = team.group && groups.includes(team.group) ? team.group : groups[0] || 'Grupo A';
+      if (!groupMap[g]) groupMap[g] = {};
+      groupMap[g][team.name] = { 
+        id: `${discipline}_${g.replace(/\s+/g, '_')}_${team.name.replace(/\s+/g, '_')}`,
+        discipline,
+        group_name: g,
+        team_name: team.name, 
+        jj: 0, 
+        jg: 0, 
+        jp: 0, 
+        pf: 0, 
+        pc: 0, 
+        dif: 0, 
+        ptos: 0 
+      };
+    });
+
+    (games || []).forEach(game => {
+      if (game.status === 'Finalizado') {
+        const homeTeamObj = teams.find(t => t.name === game.homeTeam);
+        const awayTeamObj = teams.find(t => t.name === game.awayTeam);
+        const homeGroup = homeTeamObj?.group && groups.includes(homeTeamObj.group) ? homeTeamObj.group : groups[0] || 'Grupo A';
+        const awayGroup = awayTeamObj?.group && groups.includes(awayTeamObj.group) ? awayTeamObj.group : groups[0] || 'Grupo A';
+
+        const homeStat = groupMap[homeGroup]?.[game.homeTeam];
+        const awayStat = groupMap[awayGroup]?.[game.awayTeam];
+
+        if (homeStat) {
+          homeStat.jj += 1;
+          homeStat.pf += (game.homeScore || 0);
+          homeStat.pc += (game.awayScore || 0);
+          if ((game.homeScore || 0) > (game.awayScore || 0)) {
+            homeStat.jg += 1;
+            homeStat.ptos += 2;
+          } else {
+            homeStat.jp += 1;
+            homeStat.ptos += 1;
+          }
+          homeStat.dif = homeStat.pf - homeStat.pc;
+        }
+
+        if (awayStat) {
+          awayStat.jj += 1;
+          awayStat.pf += (game.awayScore || 0);
+          awayStat.pc += (game.homeScore || 0);
+          if ((game.awayScore || 0) > (game.homeScore || 0)) {
+            awayStat.jg += 1;
+            awayStat.ptos += 2;
+          } else {
+            awayStat.jp += 1;
+            awayStat.ptos += 1;
+          }
+          awayStat.dif = awayStat.pf - awayStat.pc;
+        }
+      }
+    });
+
+    const rows: any[] = [];
+    Object.values(groupMap).forEach(teamsInGroup => {
+      Object.values(teamsInGroup).forEach(stat => {
+        rows.push({
+          ...stat,
+          updated_at: new Date().toISOString()
+        });
+      });
+    });
+
+    if (rows.length === 0) return true;
+
+    const { error } = await client
+      .from('posiciones')
       .upsert(rows, { onConflict: 'id' });
 
     return !error;

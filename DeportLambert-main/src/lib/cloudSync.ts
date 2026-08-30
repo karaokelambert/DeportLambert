@@ -11,7 +11,8 @@ import {
   fetchSupabaseTournamentState, 
   saveSupabaseTournamentState,
   syncGamesToSupabaseTable,
-  syncTeamsToSupabaseTable 
+  syncTeamsToSupabaseTable,
+  syncStandingsToSupabaseTable
 } from './supabaseClient';
 
 export interface CloudTournamentState {
@@ -153,6 +154,14 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
           const fresh = await fetchStateFromCloud(cfg);
           if (fresh) onUpdate(fresh);
         })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, async () => {
+          const fresh = await fetchStateFromCloud(cfg);
+          if (fresh) onUpdate(fresh);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posiciones' }, async () => {
+          const fresh = await fetchStateFromCloud(cfg);
+          if (fresh) onUpdate(fresh);
+        })
         .subscribe((status) => {
           console.log('[Supabase Realtime] Canal status:', status);
         });
@@ -204,7 +213,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
   if (!cfg.enabled) return true;
 
   try {
-    // 1. Supabase Persistence (tournament_sync + partidos + equipos)
+    // 1. Supabase Persistence (tournament_sync + partidos + equipos + posiciones)
     const supabaseOk = await saveSupabaseTournamentState(cfg.channelId || 'deportlambert_live', state);
 
     if (state.disciplineData) {
@@ -215,6 +224,9 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
         }
         if (disc?.teams) {
           syncTeamsToSupabaseTable(discKey, disc.teams).catch(() => {});
+        }
+        if (disc?.teams && disc?.games) {
+          syncStandingsToSupabaseTable(discKey, disc.teams, disc.games, disc.groups || ['Grupo A', 'Grupo B']).catch(() => {});
         }
       }
     }
