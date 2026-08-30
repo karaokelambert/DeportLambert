@@ -326,11 +326,7 @@ export default function SportsManager() {
         // 1. Cargar primero datos locales de localStorage
         const local = getLocalState();
         if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
-          setDisciplineData(prev => ({
-            ...INITIAL_DISCIPLINE_DATA,
-            ...prev,
-            ...local.disciplineData
-          }));
+          setDisciplineData(local.disciplineData);
           if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
           if (local.branding) setBranding(local.branding);
           if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
@@ -338,7 +334,7 @@ export default function SportsManager() {
           if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
         }
 
-        // 2. Consultar la nube y sincronizar si la nube tiene datos más recientes
+        // 2. Consultar la nube y sincronizar si la nube tiene datos
         const remote = await fetchStateFromCloud(syncConfig);
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
           const remoteVersion = remote.version || 0;
@@ -347,11 +343,7 @@ export default function SportsManager() {
           const localTime = localUpdatedAtRef.current || 0;
 
           if (remoteVersion > localVersion || remoteTime >= localTime || !local) {
-            setDisciplineData(prev => ({
-              ...INITIAL_DISCIPLINE_DATA,
-              ...prev,
-              ...remote.disciplineData
-            }));
+            setDisciplineData(remote.disciplineData);
             if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
             if (remote.branding) setBranding(remote.branding);
             if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
@@ -370,7 +362,7 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Aplicar actualización remota de forma segura asegurando la integridad de todas las disciplinas
+  // Aplicar actualización remota de forma segura
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
     if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
     
@@ -384,11 +376,7 @@ export default function SportsManager() {
 
     // Aceptar si la versión remota es mayor o si fue actualizado después
     if (remoteVersion > currentVersion || remoteTime > currentTime) {
-      setDisciplineData(prev => ({
-        ...INITIAL_DISCIPLINE_DATA,
-        ...prev,
-        ...remote.disciplineData
-      }));
+      setDisciplineData(remote.disciplineData);
       if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
       if (remote.branding) setBranding(remote.branding);
       if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
@@ -432,17 +420,13 @@ export default function SportsManager() {
     if (localMutationTimeoutRef.current) clearTimeout(localMutationTimeoutRef.current);
 
     setSyncStatus('syncing');
-    const fullDisciplineData = {
-      ...INITIAL_DISCIPLINE_DATA,
-      ...disciplineData,
-      ...(customData?.disciplineData || {})
-    };
+    const currentDataToPush = customData?.disciplineData || disciplineData;
 
     const payload: CloudTournamentState = {
       version: nextVersion,
       updatedAt: now,
       updatedBy: userName || role,
-      disciplineData: fullDisciplineData,
+      disciplineData: currentDataToPush,
       disciplinesList: customData?.disciplinesList || disciplinesList,
       branding: customData?.branding || branding,
       registeredAdmins: customData?.registeredAdmins || registeredAdmins,

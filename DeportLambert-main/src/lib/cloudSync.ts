@@ -25,18 +25,9 @@ export interface CloudTournamentState {
   registeredAdmins?: any;
 }
 
-const STORAGE_KEYS = [
-  'jl360_discipline_data_v2',
-  'jl360_saved_tournament_data_v1',
-  'jl360_discipline_data',
-  'jl360_cloud_state_v2',
-  'sports_manager_data',
-  'deportlambert_tournament_state'
-];
+const PRIMARY_STORAGE_KEY = 'jl360_cloud_state_v4';
 
 const CONFIG_KEY = 'jl360_sync_config_v4';
-const MASTER_OBJECT_ID = 'ff808181a04ccf2d01a04fc723fd0e1b';
-const CLOUD_SYNC_ENDPOINT = 'https://api.restful-api.dev/objects';
 
 export interface SyncConfig {
   enabled: boolean;
@@ -76,24 +67,13 @@ export function saveSyncConfig(config: SyncConfig) {
 
 export function getLocalState(): CloudTournamentState | null {
   if (typeof window === 'undefined') return null;
-  for (const key of STORAGE_KEYS) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed) {
-          if (parsed.disciplineData) return parsed;
-          if (parsed.baloncesto || parsed.futsal || parsed.voleibol) {
-            return {
-              version: 4,
-              updatedAt: Date.now(),
-              disciplineData: parsed
-            };
-          }
-        }
-      }
-    } catch (e) {}
-  }
+  try {
+    const raw = localStorage.getItem(PRIMARY_STORAGE_KEY) || localStorage.getItem('jl360_cloud_state_v2');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.disciplineData) return parsed;
+    }
+  } catch (e) {}
   return null;
 }
 
@@ -101,12 +81,8 @@ export function saveLocalState(state: CloudTournamentState) {
   if (typeof window === 'undefined' || !state) return;
   try {
     const serialized = JSON.stringify(state);
+    localStorage.setItem(PRIMARY_STORAGE_KEY, serialized);
     localStorage.setItem('jl360_cloud_state_v2', serialized);
-    localStorage.setItem('jl360_discipline_data_v2', serialized);
-    localStorage.setItem('jl360_saved_tournament_data_v1', serialized);
-    if (state.disciplineData) {
-      localStorage.setItem('jl360_discipline_data', JSON.stringify(state.disciplineData));
-    }
   } catch (e) {}
 }
 
@@ -260,25 +236,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
       }
     }
 
-    // 2. Global Cloud Relay (Universal Multi-Device Sync Channel Backup)
-    const payload = {
-      name: `JL360_${cfg.channelId || 'deportlambert_tournament_2026'}`,
-      data: {
-        channel: cfg.channelId || 'deportlambert_tournament_2026',
-        stateJson: JSON.stringify(state),
-        updatedAt: state.updatedAt
-      }
-    };
-
-    const res = await fetch(`${CLOUD_SYNC_ENDPOINT}/${MASTER_OBJECT_ID}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (supabaseOk || res.ok) {
-      return true;
-    }
+    return supabaseOk;
   } catch (error) {
     console.warn('[CloudSync] Guardado localmente con éxito:', error);
   }
@@ -286,7 +244,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
 }
 
 /**
- * Fetch latest tournament state from the cloud database
+ * Fetch latest tournament state from the cloud database (Supabase)
  */
 export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTournamentState | null> {
   const cfg = config || getSyncConfig();
@@ -295,7 +253,7 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
   try {
     // 1. Supabase Query primero
     const spData = await fetchSupabaseTournamentState(cfg.channelId || 'deportlambert_live');
-    if (spData && spData.disciplineData) {
+    if (spData && spData.disciplineData && Object.keys(spData.disciplineData).length > 0) {
       return spData as CloudTournamentState;
     }
 
@@ -312,23 +270,11 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
         });
         if (res.ok) {
           const list = await res.json();
-          if (list && list[0] && list[0].data) return list[0].data;
+          if (list && list[0] && list[0].data && list[0].data.disciplineData) {
+            return list[0].data as CloudTournamentState;
+          }
         }
       } catch (e) {}
-    }
-
-    // 3. Global Cloud Relay Query
-    const res = await fetch(`${CLOUD_SYNC_ENDPOINT}/${MASTER_OBJECT_ID}?t=${Date.now()}`, { 
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache' }
-    });
-
-    if (res.ok) {
-      const item = await res.json();
-      if (item && item.data && item.data.stateJson) {
-        const parsed = JSON.parse(item.data.stateJson);
-        return parsed;
-      }
     }
   } catch (error) {
     console.warn('[CloudSync] Fallback a datos locales:', error);
