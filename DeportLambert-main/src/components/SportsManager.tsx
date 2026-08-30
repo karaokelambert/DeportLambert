@@ -296,23 +296,10 @@ export default function SportsManager() {
     }
   }, []);
 
-  // ── Datos por disciplina con protección contra sobreescritura ──
-  const [disciplineData, setDisciplineData] = useState<Record<string, { groups: string[], teams: Team[], games: Game[] }>>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const local = getLocalState();
-        if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
-          return {
-            ...INITIAL_DISCIPLINE_DATA,
-            ...local.disciplineData
-          };
-        }
-      } catch (e) {}
-    }
-    return INITIAL_DISCIPLINE_DATA;
-  });
+  // ── Datos por disciplina con Supabase como Única Fuente de Verdad ──
+  const [disciplineData, setDisciplineData] = useState<Record<string, { groups: string[], teams: Team[], games: Game[] }>>(INITIAL_DISCIPLINE_DATA);
 
-  // Inicialización de datos desde localStorage y nube con prioridad a datos reales
+  // Inicialización de datos desde Supabase con prioridad absoluta
   const localVersionRef = useRef<number>(1);
   const localUpdatedAtRef = useRef<number>(0);
   const isHydratedRef = useRef<boolean>(false);
@@ -325,20 +312,10 @@ export default function SportsManager() {
     async function initCloud() {
       try {
         setSyncStatus('syncing');
-        // 1. Cargar primero datos locales de localStorage para inicio instantáneo
-        const local = getLocalState();
-        if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
-          setDisciplineData(local.disciplineData);
-          if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
-          if (local.branding) setBranding(local.branding);
-          if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
-          if (local.version) localVersionRef.current = local.version;
-          if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
-        }
-
-        // 2. Consultar la nube Supabase como fuente de verdad canónica
+        // 1. Consultar PRIMERO la nube Supabase como Fuente Única de Verdad
         const remote = await fetchStateFromCloud(syncConfig);
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
+          disciplineDataRef.current = remote.disciplineData;
           setDisciplineData(remote.disciplineData);
           if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
           if (remote.branding) setBranding(remote.branding);
@@ -347,6 +324,18 @@ export default function SportsManager() {
           localUpdatedAtRef.current = remote.updatedAt || Date.now();
           setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
           saveLocalState(remote);
+        } else {
+          // 2. Solo si no hay conexión a Supabase se cargan datos locales de rescate
+          const local = getLocalState();
+          if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
+            disciplineDataRef.current = local.disciplineData;
+            setDisciplineData(local.disciplineData);
+            if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
+            if (local.branding) setBranding(local.branding);
+            if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
+            if (local.version) localVersionRef.current = local.version;
+            if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
+          }
         }
         setSyncStatus('synced');
       } catch (e) {
@@ -358,7 +347,7 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Aplicar actualización remota de forma segura asegurando la propagación a teléfonos
+  // Aplicar actualización remota de forma segura sin re-empujar datos
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
     if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
     
@@ -370,6 +359,7 @@ export default function SportsManager() {
 
     // Si los datos en la nube son diferentes o la versión es mayor, actualizar inmediatamente
     if (remoteStr !== localStr || (remote.version && remote.version > localVersionRef.current)) {
+      disciplineDataRef.current = remote.disciplineData;
       setDisciplineData(remote.disciplineData);
       if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
       if (remote.branding) setBranding(remote.branding);
@@ -405,10 +395,10 @@ export default function SportsManager() {
     return () => clearInterval(timer);
   }, [syncConfig, applyRemoteUpdate]);
 
-  // Función de sincronización forzada a demanda
+  // Función de sincronización forzada exclusiva para acciones del usuario
   const triggerPushSync = useCallback(async (customData?: Partial<CloudTournamentState>) => {
     const now = Date.now();
-    const nextVersion = now; // Monotónico basado en tiempo que supera cualquier versión anterior
+    const nextVersion = now;
     localVersionRef.current = nextVersion;
     localUpdatedAtRef.current = now;
     isLocallyMutatingRef.current = true;
@@ -436,15 +426,6 @@ export default function SportsManager() {
     }, 500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
 
-  // Sincronización automática con debounce al realizar cambios
-  useEffect(() => {
-    if (!isHydratedRef.current) return;
-    const t = setTimeout(() => {
-      triggerPushSync();
-    }, 150);
-    return () => clearTimeout(t);
-  }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
-
   const currentDiscKey = selectedDiscipline ? selectedDiscipline.id : 'baloncesto';
   const defaultForCurrentDisc = INITIAL_DISCIPLINE_DATA[currentDiscKey] || { teams: [], games: [], groups: ['Grupo A', 'Grupo B'] };
 
@@ -465,6 +446,7 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
+      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
   };
@@ -482,6 +464,7 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
+      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
   };
@@ -499,6 +482,7 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
+      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
   };
@@ -766,17 +750,32 @@ export default function SportsManager() {
     }
   };
 
+  const handleSaveBranding = (newBranding: typeof branding) => {
+    setBranding(newBranding);
+    triggerPushSync({ branding: newBranding });
+  };
+
+  const handleUpdateDisciplines = (newList: typeof disciplinesList) => {
+    setDisciplinesList(newList);
+    triggerPushSync({ disciplinesList: newList });
+  };
+
+  const handleUpdateAdmins = (newAdmins: typeof registeredAdmins) => {
+    setRegisteredAdmins(newAdmins);
+    triggerPushSync({ registeredAdmins: newAdmins });
+  };
+
   // ── 1. Portal Multi-Disciplina (Landing Principal) ─────────
   if (!selectedDiscipline) {
     return (
       <div className="bg-sports-portal sports-grid-pattern min-h-screen flex flex-col justify-between">
         <Navbar360 
           branding={branding}
-          onSaveBranding={setBranding}
+          onSaveBranding={handleSaveBranding}
           disciplines={disciplinesList}
-          onUpdateDisciplines={setDisciplinesList}
+          onUpdateDisciplines={handleUpdateDisciplines}
           admins={registeredAdmins}
-          onUpdateAdmins={setRegisteredAdmins}
+          onUpdateAdmins={handleUpdateAdmins}
         />
         <main className="flex-1 flex flex-col justify-center py-6">
           <DisciplinesPortal 
@@ -811,11 +810,11 @@ export default function SportsManager() {
           onBackToPortal={() => setSelectedDiscipline(null)} 
           showBackPortal 
           branding={branding}
-          onSaveBranding={setBranding}
+          onSaveBranding={handleSaveBranding}
           disciplines={disciplinesList}
-          onUpdateDisciplines={setDisciplinesList}
+          onUpdateDisciplines={handleUpdateDisciplines}
           admins={registeredAdmins}
-          onUpdateAdmins={setRegisteredAdmins}
+          onUpdateAdmins={handleUpdateAdmins}
         />
 
         <div className="flex-1 flex items-center justify-center p-4">
