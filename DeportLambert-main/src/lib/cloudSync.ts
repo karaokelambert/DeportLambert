@@ -68,7 +68,7 @@ export function saveSyncConfig(config: SyncConfig) {
 export function getLocalState(): CloudTournamentState | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(PRIMARY_STORAGE_KEY) || localStorage.getItem('jl360_cloud_state_v2');
+    const raw = localStorage.getItem(PRIMARY_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.disciplineData) return parsed;
@@ -82,7 +82,6 @@ export function saveLocalState(state: CloudTournamentState) {
   try {
     const serialized = JSON.stringify(state);
     localStorage.setItem(PRIMARY_STORAGE_KEY, serialized);
-    localStorage.setItem('jl360_cloud_state_v2', serialized);
   } catch (e) {}
 }
 
