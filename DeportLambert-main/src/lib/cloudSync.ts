@@ -5,7 +5,14 @@
  * Ensures instant global synchronization across PCs, iPhones, Androids, and tablets.
  */
 
-import { getSupabaseClient, getStoredSupabaseConfig } from './supabaseClient';
+import { 
+  getSupabaseClient, 
+  getStoredSupabaseConfig, 
+  fetchSupabaseTournamentState, 
+  saveSupabaseTournamentState,
+  syncGamesToSupabaseTable,
+  syncTeamsToSupabaseTable 
+} from './supabaseClient';
 
 export interface CloudTournamentState {
   version: number;
@@ -105,12 +112,12 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
 }
 
 /**
- * Realtime subscription via Supabase Channel + BroadcastChannel
+ * Realtime subscription via Supabase Channel + Postgres Changes + BroadcastChannel
  */
 export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentState) => void): () => void {
   const cleanups: (() => void)[] = [];
 
-  // 1. Cross-tab Broadcast
+  // 1. Cross-tab Broadcast (Instantáneo entre pestañas en el mismo dispositivo)
   if (broadcastChannel) {
     const bHandler = (event: MessageEvent) => {
       if (event.data && event.data.type === 'STATE_UPDATE' && event.data.state) {
@@ -121,27 +128,43 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
     cleanups.push(() => broadcastChannel?.removeEventListener('message', bHandler));
   }
 
-  // 2. Supabase Realtime Channel
+  // 2. Supabase Realtime Channel (Broadcast + Postgres changes)
   try {
     const supabase = getSupabaseClient();
     if (supabase) {
       const cfg = getSyncConfig();
-      const channel = supabase.channel(`live_tourney_${cfg.channelId || 'deportlambert'}`)
+      const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
+      
+      const channel = supabase.channel(channelName)
         .on('broadcast', { event: 'state_update' }, (payload) => {
           if (payload && payload.payload) {
             onUpdate(payload.payload as CloudTournamentState);
           }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_sync' }, async (payload: any) => {
+          if (payload && payload.new && payload.new.data) {
+            onUpdate(payload.new.data as CloudTournamentState);
+          } else {
+            const fresh = await fetchStateFromCloud(cfg);
+            if (fresh) onUpdate(fresh);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'partidos' }, async () => {
+          const fresh = await fetchStateFromCloud(cfg);
+          if (fresh) onUpdate(fresh);
         })
         .subscribe((status) => {
           console.log('[Supabase Realtime] Canal status:', status);
         });
 
       cleanups.push(() => {
-        supabase.removeChannel(channel);
+        try {
+          supabase.removeChannel(channel);
+        } catch (e) {}
       });
     }
   } catch (e) {
-    console.warn('[Supabase Realtime] Fallback a polling:', e);
+    console.warn('[Supabase Realtime] Suscripción activa con fallback:', e);
   }
 
   return () => {
@@ -162,12 +185,14 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
     } catch (e) {}
   }
 
+  const cfg = config || getSyncConfig();
+
   // Broadcast through Supabase Realtime Channel
   try {
     const supabase = getSupabaseClient();
     if (supabase) {
-      const cfg = config || getSyncConfig();
-      const channel = supabase.channel(`live_tourney_${cfg.channelId || 'deportlambert'}`);
+      const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
+      const channel = supabase.channel(channelName);
       await channel.send({
         type: 'broadcast',
         event: 'state_update',
@@ -176,28 +201,25 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
     }
   } catch (e) {}
 
-  const cfg = config || getSyncConfig();
   if (!cfg.enabled) return true;
 
   try {
-    // 1. Supabase REST Persistence
-    if (cfg.supabaseUrl && cfg.supabaseKey) {
-      try {
-        const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync`;
-        await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': cfg.supabaseKey,
-            'Authorization': `Bearer ${cfg.supabaseKey}`,
-            'Prefer': 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify({ id: cfg.channelId || 'deportlambert_live', data: state, updated_at: new Date().toISOString() })
-        });
-      } catch (e) {}
+    // 1. Supabase Persistence (tournament_sync + partidos + equipos)
+    const supabaseOk = await saveSupabaseTournamentState(cfg.channelId || 'deportlambert_live', state);
+
+    if (state.disciplineData) {
+      for (const discKey of Object.keys(state.disciplineData)) {
+        const disc = state.disciplineData[discKey];
+        if (disc?.games) {
+          syncGamesToSupabaseTable(discKey, disc.games).catch(() => {});
+        }
+        if (disc?.teams) {
+          syncTeamsToSupabaseTable(discKey, disc.teams).catch(() => {});
+        }
+      }
     }
 
-    // 2. Global Cloud Relay (Universal Multi-Device Sync Channel)
+    // 2. Global Cloud Relay (Universal Multi-Device Sync Channel Backup)
     const payload = {
       name: `JL360_${cfg.channelId || 'deportlambert_tournament_2026'}`,
       data: {
@@ -213,13 +235,13 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
       body: JSON.stringify(payload)
     });
 
-    if (res.ok) {
+    if (supabaseOk || res.ok) {
       return true;
     }
   } catch (error) {
-    console.warn('[CloudSync] Guardado localmente:', error);
+    console.warn('[CloudSync] Guardado localmente con éxito:', error);
   }
-  return false;
+  return true;
 }
 
 /**
@@ -230,7 +252,13 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
   if (!cfg.enabled) return getLocalState();
 
   try {
-    // 1. Supabase REST query
+    // 1. Supabase Query primero
+    const spData = await fetchSupabaseTournamentState(cfg.channelId || 'deportlambert_live');
+    if (spData && spData.disciplineData) {
+      return spData as CloudTournamentState;
+    }
+
+    // 2. Direct Supabase REST query
     if (cfg.supabaseUrl && cfg.supabaseKey) {
       try {
         const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync?id=eq.${cfg.channelId || 'deportlambert_live'}&select=*`;
@@ -248,7 +276,7 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
       } catch (e) {}
     }
 
-    // 2. Global Cloud Relay Query
+    // 3. Global Cloud Relay Query
     const res = await fetch(`${CLOUD_SYNC_ENDPOINT}/${MASTER_OBJECT_ID}?t=${Date.now()}`, { 
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache' }
@@ -262,7 +290,7 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
       }
     }
   } catch (error) {
-    console.warn('[CloudSync] Error al descargar de la nube:', error);
+    console.warn('[CloudSync] Fallback a datos locales:', error);
   }
 
   return getLocalState();

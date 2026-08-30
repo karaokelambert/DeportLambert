@@ -1577,14 +1577,14 @@ function DashboardView({
 
                   {/* 2. BLOQUE MARCADOR / TIEMPO (Centro) - SIEMPRE EN UNA SOLA LÍNEA HORIZONTAL */}
                   <div className="flex flex-col items-center justify-center px-1 shrink-0 space-y-1.5 min-w-fit">
-                    <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap bg-slate-950/90 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
-                      <span className="text-xl sm:text-3xl md:text-5xl font-black text-[#00E676] font-mono drop-shadow-[0_2px_8px_rgba(0,230,118,0.45)] whitespace-nowrap leading-none">
+                    <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap bg-slate-950/90 px-2 sm:px-5 py-1 sm:py-2.5 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
+                      <span className="text-base sm:text-2xl md:text-5xl font-black text-[#00E676] font-mono drop-shadow-[0_2px_8px_rgba(0,230,118,0.45)] whitespace-nowrap leading-none">
                         {g.homeScore}
                       </span>
-                      <span className="text-amber-400 font-black text-xs sm:text-2xl font-mono px-1 sm:px-2 whitespace-nowrap leading-none">
+                      <span className="text-amber-400 font-black text-xs sm:text-xl font-mono px-1 sm:px-2 whitespace-nowrap leading-none">
                         -
                       </span>
-                      <span className="text-xl sm:text-3xl md:text-5xl font-black text-[#FF3D00] font-mono drop-shadow-[0_2px_8px_rgba(255,61,0,0.45)] whitespace-nowrap leading-none">
+                      <span className="text-base sm:text-2xl md:text-5xl font-black text-[#FF3D00] font-mono drop-shadow-[0_2px_8px_rgba(255,61,0,0.45)] whitespace-nowrap leading-none">
                         {g.awayScore}
                       </span>
                     </div>
@@ -3218,7 +3218,7 @@ function CalendarView({
                   {/* Marcador Central - SIEMPRE EN UNA SOLA LÍNEA HORIZONTAL */}
                   <div className="flex flex-col items-center justify-center shrink-0 space-y-1 min-w-fit px-1">
                     {game.status === 'Finalizado' || game.status === 'En Curso' ? (
-                      <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap font-mono font-black text-lg sm:text-3xl md:text-4xl text-amber-300 bg-slate-950 px-2.5 sm:px-5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
+                      <div className="flex flex-row flex-nowrap items-center justify-center whitespace-nowrap font-mono font-black text-base sm:text-2xl md:text-4xl text-amber-300 bg-slate-950 px-2 sm:px-4 py-1 sm:py-2 rounded-xl sm:rounded-2xl border border-slate-800 shadow-inner shrink-0 tracking-tight leading-none">
                         <span className="text-[#00E676] whitespace-nowrap">{game.homeScore}</span>
                         <span className="px-1 text-amber-500/80 whitespace-nowrap">-</span>
                         <span className="text-[#FF3D00] whitespace-nowrap">{game.awayScore}</span>

@@ -2,9 +2,9 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Read from Environment Variables or pre-configured cloud endpoint
-const ENV_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co';
-const ENV_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3am94cXlkd3F1enRkanJsZnhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4NTYwMDAsImV4cCI6MjAyNTQzMjAwMH0.sample_public_anon_key_for_broadcast';
+// Read from Environment Variables or configured default endpoint
+const DEFAULT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kwjoxqydwquztdjrlfxg.supabase.co';
+const DEFAULT_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3am94cXlkd3F1enRkanJsZnhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4NTYwMDAsImV4cCI6MjAyNTQzMjAwMH0.sample_public_anon_key_for_broadcast';
 
 const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v2';
 
@@ -16,7 +16,7 @@ export interface SupabaseConfig {
 
 export function getStoredSupabaseConfig(): SupabaseConfig {
   if (typeof window === 'undefined') {
-    return { url: ENV_SUPABASE_URL, key: ENV_SUPABASE_KEY, channel: 'deportlambert_live' };
+    return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
   }
   try {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
@@ -25,7 +25,7 @@ export function getStoredSupabaseConfig(): SupabaseConfig {
       if (parsed.url && parsed.key) return parsed;
     }
   } catch (e) {}
-  return { url: ENV_SUPABASE_URL, key: ENV_SUPABASE_KEY, channel: 'deportlambert_live' };
+  return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
 }
 
 export function saveStoredSupabaseConfig(config: SupabaseConfig) {
@@ -40,13 +40,16 @@ let currentConfigSig = '';
 
 export function getSupabaseClient(): SupabaseClient | null {
   const config = getStoredSupabaseConfig();
-  const sig = `${config.url}_${config.key}`;
+  const url = (config.url || DEFAULT_SUPABASE_URL || '').trim();
+  const key = (config.key || DEFAULT_SUPABASE_KEY || '').trim();
+  
+  const sig = `${url}_${key}`;
   if (cachedClient && currentConfigSig === sig) {
     return cachedClient;
   }
-  if (!config.url || !config.key) return null;
+  if (!url || !key) return null;
   try {
-    cachedClient = createClient(config.url, config.key, {
+    cachedClient = createClient(url, key, {
       auth: { persistSession: false },
       realtime: {
         params: {
@@ -93,11 +96,70 @@ export async function saveSupabaseTournamentState(channelId: string = 'deportlam
         id: channelId,
         data: state,
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'id' });
 
     return !error;
   } catch (e) {
     console.warn('[Supabase] Error en upsert tournament_sync:', e);
+    return false;
+  }
+}
+
+export async function syncGamesToSupabaseTable(discipline: string, games: any[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !games || games.length === 0) return false;
+  try {
+    const rows = games.map(g => ({
+      id: `${discipline}_${g.id}`,
+      discipline,
+      home_team: g.homeTeam,
+      away_team: g.awayTeam,
+      home_score: g.homeScore || 0,
+      away_score: g.awayScore || 0,
+      home_quarters: g.homeQuarters || [0, 0, 0, 0],
+      away_quarters: g.awayQuarters || [0, 0, 0, 0],
+      current_quarter: g.currentQuarter || 1,
+      date: g.date || '',
+      time: g.time || '',
+      location: g.location || '',
+      phase: g.phase || '',
+      status: g.status || 'Programado',
+      updated_at: new Date().toISOString()
+    }));
+
+    const { error } = await client
+      .from('partidos')
+      .upsert(rows, { onConflict: 'id' });
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function syncTeamsToSupabaseTable(discipline: string, teams: any[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !teams || teams.length === 0) return false;
+  try {
+    const rows = teams.map(t => ({
+      id: `${discipline}_${t.id}`,
+      discipline,
+      name: t.name,
+      delegado: t.delegado || '',
+      telefono: t.telefono || '',
+      group_name: t.group || 'Grupo A',
+      logo_url: t.logoUrl || '',
+      jugadores: t.jugadores || [],
+      delegate_pin: t.delegatePin || '0000',
+      updated_at: new Date().toISOString()
+    }));
+
+    const { error } = await client
+      .from('equipos')
+      .upsert(rows, { onConflict: 'id' });
+
+    return !error;
+  } catch (e) {
     return false;
   }
 }
