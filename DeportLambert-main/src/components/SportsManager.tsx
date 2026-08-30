@@ -446,9 +446,11 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
-      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
+    setTimeout(() => {
+      triggerPushSync({ disciplineData: disciplineDataRef.current });
+    }, 20);
   };
 
   const setGames = (action: React.SetStateAction<Game[]>) => {
@@ -464,9 +466,11 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
-      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
+    setTimeout(() => {
+      triggerPushSync({ disciplineData: disciplineDataRef.current });
+    }, 20);
   };
 
   const setGroups = (action: React.SetStateAction<string[]>) => {
@@ -482,9 +486,11 @@ export default function SportsManager() {
         }
       };
       disciplineDataRef.current = nextDisciplineData;
-      triggerPushSync({ disciplineData: nextDisciplineData });
       return nextDisciplineData;
     });
+    setTimeout(() => {
+      triggerPushSync({ disciplineData: disciplineDataRef.current });
+    }, 20);
   };
 
   // ── Handlers de Formato de Torneo ──────────────────────────
