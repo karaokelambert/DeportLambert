@@ -284,8 +284,6 @@ export default function SportsManager() {
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [syncConfig] = useState<SyncConfig>(getSyncConfig());
-  const localUpdatedAtRef = useRef<number>(Date.now());
-  const isHydratedRef = useRef<boolean>(false);
 
   // ── Estado de notificaciones ─────────────
   const [notifEnabled, setNotifEnabled] = useState(false);
@@ -312,10 +310,11 @@ export default function SportsManager() {
   });
 
   // Inicialización de datos desde localStorage y nube con prioridad a datos reales
-  const disciplineDataRef = useRef(disciplineData);
-  disciplineDataRef.current = disciplineData;
-
-  const isLocallyMutatingRef = useRef(false);
+  const localVersionRef = useRef<number>(1);
+  const localUpdatedAtRef = useRef<number>(0);
+  const isHydratedRef = useRef<boolean>(false);
+  const isLocallyMutatingRef = useRef<boolean>(false);
+  const localMutationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function initCloud() {
@@ -328,21 +327,27 @@ export default function SportsManager() {
           if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
           if (local.branding) setBranding(local.branding);
           if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
-          if (local.updatedAt) {
-            localUpdatedAtRef.current = local.updatedAt;
-            setLastSyncTime(new Date(local.updatedAt).toLocaleTimeString());
-          }
+          if (local.version) localVersionRef.current = local.version;
+          if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
         }
 
-        // 2. Consultar la nube y sincronizar
+        // 2. Consultar la nube y sincronizar si la nube tiene datos más recientes
         const remote = await fetchStateFromCloud(syncConfig);
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
-          setDisciplineData(remote.disciplineData);
-          if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-          if (remote.branding) setBranding(remote.branding);
-          if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-          localUpdatedAtRef.current = remote.updatedAt || Date.now();
-          setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
+          const remoteVersion = remote.version || 0;
+          const localVersion = localVersionRef.current || 0;
+          const remoteTime = remote.updatedAt || 0;
+          const localTime = localUpdatedAtRef.current || 0;
+
+          if (remoteVersion > localVersion || remoteTime >= localTime || !local) {
+            setDisciplineData(remote.disciplineData);
+            if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+            if (remote.branding) setBranding(remote.branding);
+            if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+            localVersionRef.current = remoteVersion || 1;
+            localUpdatedAtRef.current = remoteTime || Date.now();
+            setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
+          }
         }
         setSyncStatus('synced');
       } catch (e) {
@@ -354,62 +359,66 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
+  // Aplicar actualización remota de forma segura
+  const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
+    if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
+    
+    // Si estamos editando localmente en este mismo instante, no sobreescribir con datos viejos
+    if (isLocallyMutatingRef.current) return;
+
+    const remoteVersion = remote.version || 0;
+    const currentVersion = localVersionRef.current || 0;
+    const remoteTime = remote.updatedAt || 0;
+    const currentTime = localUpdatedAtRef.current || 0;
+
+    // Aceptar si la versión remota es mayor o si fue actualizado después
+    if (remoteVersion > currentVersion || remoteTime > currentTime) {
+      setDisciplineData(remote.disciplineData);
+      if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+      if (remote.branding) setBranding(remote.branding);
+      if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+      localVersionRef.current = remoteVersion;
+      localUpdatedAtRef.current = remoteTime;
+      setLastSyncTime(new Date(remoteTime).toLocaleTimeString());
+      setSyncStatus('synced');
+    }
+  }, []);
+
   // Escuchar actualizaciones en tiempo real (Supabase Channel WebSockets + Broadcast)
   useEffect(() => {
     const unsub = subscribeToRealtimeUpdates((remote) => {
-      if (!remote || !remote.disciplineData) return;
-      if (isLocallyMutatingRef.current) return;
-
-      const remoteStr = JSON.stringify(remote.disciplineData);
-      const localStr = JSON.stringify(disciplineDataRef.current);
-
-      if (remoteStr !== localStr || (remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current)) {
-        setDisciplineData(remote.disciplineData);
-        if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-        if (remote.branding) setBranding(remote.branding);
-        if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-        localUpdatedAtRef.current = remote.updatedAt || Date.now();
-        setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
-        setSyncStatus('synced');
-      }
+      applyRemoteUpdate(remote);
     });
     return unsub;
-  }, []);
+  }, [applyRemoteUpdate]);
 
-  // Polling periódico rápido cada 2.5s para sincronizar marcadores y juegos entre PC y teléfonos
+  // Polling de respaldo cada 3s (solo aplica si remote es más nuevo)
   useEffect(() => {
     const timer = setInterval(async () => {
       if (!syncConfig.enabled || isLocallyMutatingRef.current) return;
       try {
         const remote = await fetchStateFromCloud(syncConfig);
-        if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
-          const remoteStr = JSON.stringify(remote.disciplineData);
-          const localStr = JSON.stringify(disciplineDataRef.current);
-
-          if (remoteStr !== localStr || (remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current)) {
-            setDisciplineData(remote.disciplineData);
-            if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-            if (remote.branding) setBranding(remote.branding);
-            if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-            localUpdatedAtRef.current = remote.updatedAt || Date.now();
-            setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
-            setSyncStatus('synced');
-          }
+        if (remote) {
+          applyRemoteUpdate(remote);
         }
       } catch (e) {}
-    }, 2500);
+    }, 3000);
 
     return () => clearInterval(timer);
-  }, [syncConfig]);
+  }, [syncConfig, applyRemoteUpdate]);
 
   // Función de sincronización forzada a demanda
   const triggerPushSync = useCallback(async (customData?: Partial<CloudTournamentState>) => {
     const now = Date.now();
+    const nextVersion = (localVersionRef.current || 0) + 1;
+    localVersionRef.current = nextVersion;
     localUpdatedAtRef.current = now;
     isLocallyMutatingRef.current = true;
+    if (localMutationTimeoutRef.current) clearTimeout(localMutationTimeoutRef.current);
+
     setSyncStatus('syncing');
     const payload: CloudTournamentState = {
-      version: 4,
+      version: nextVersion,
       updatedAt: now,
       updatedBy: userName || role,
       disciplineData: customData?.disciplineData || disciplineData,
@@ -420,9 +429,10 @@ export default function SportsManager() {
     const ok = await pushStateToCloud(payload, syncConfig);
     setSyncStatus(ok ? 'synced' : 'offline');
     setLastSyncTime(new Date(now).toLocaleTimeString());
-    setTimeout(() => {
+
+    localMutationTimeoutRef.current = setTimeout(() => {
       isLocallyMutatingRef.current = false;
-    }, 500);
+    }, 800);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
 
   // Sincronización automática con debounce al realizar cambios
@@ -430,7 +440,7 @@ export default function SportsManager() {
     if (!isHydratedRef.current) return;
     const t = setTimeout(() => {
       triggerPushSync();
-    }, 300);
+    }, 200);
     return () => clearTimeout(t);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
 
