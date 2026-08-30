@@ -38,6 +38,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { DisciplineData, DISCIPLINES } from './DisciplinesPortal';
+import { testSupabaseConnection } from '../lib/supabaseClient';
 import { 
   BasketballIcon3D, 
   VolleyballIcon3D, 
@@ -1187,6 +1188,14 @@ export function CloudSyncModal({
   const [spChannel, setSpChannel] = useState('deportlambert_live');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const [testResult, setTestResult] = useState<{ ok?: boolean; message?: string; testing?: boolean } | null>(null);
+
+  const handleTestConnection = async () => {
+    setTestResult({ testing: true });
+    const res = await testSupabaseConnection(spUrl.trim(), spKey.trim());
+    setTestResult(res);
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('jl360_supabase_config_v2');
@@ -1301,22 +1310,25 @@ export function CloudSyncModal({
                   type="text"
                   value={spUrl}
                   onChange={e => setSpUrl(e.target.value)}
-                  placeholder="https://xyzcompany.supabase.co"
+                  placeholder="https://nhurcieffcazroqfarrh.supabase.co"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">
-                  NEXT_PUBLIC_SUPABASE_ANON_KEY
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY (JWT que empieza con &quot;eyJ...&quot;)
                 </label>
                 <input
-                  type="password"
+                  type="text"
                   value={spKey}
                   onChange={e => setSpKey(e.target.value)}
                   placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
                 />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  💡 Encuéntrala en tu Supabase: <strong>Project Settings &gt; API &gt; Project API keys &gt; anon public</strong>.
+                </p>
               </div>
 
               <div>
@@ -1332,13 +1344,35 @@ export function CloudSyncModal({
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={handleSaveConfig}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black uppercase text-xs rounded-xl shadow transition-colors"
-              >
-                {savedSuccess ? '✓ Credenciales Guardadas' : 'Guardar y Reconectar Supabase'}
-              </button>
+              {testResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold ${
+                  testResult.testing 
+                    ? 'bg-amber-950/80 border border-amber-500 text-amber-300' 
+                    : testResult.ok 
+                    ? 'bg-emerald-950/80 border border-emerald-500 text-emerald-300' 
+                    : 'bg-red-950/80 border border-red-500 text-red-300'
+                }`}>
+                  {testResult.testing ? '⏳ Probando conexión con Supabase...' : (testResult.ok ? '🟢 ' : '❌ ') + testResult.message}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testResult?.testing}
+                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold uppercase text-[11px] rounded-xl border border-slate-700 transition-colors"
+                >
+                  Probar Conexión
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveConfig}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black uppercase text-[11px] rounded-xl shadow transition-colors"
+                >
+                  {savedSuccess ? '✓ Guardado' : 'Guardar y Reconectar'}
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -112,6 +112,8 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   } catch (e) {}
 }
 
+let activeRealtimeChannel: any = null;
+
 /**
  * Realtime subscription via Supabase Channel + Postgres Changes + BroadcastChannel
  */
@@ -136,7 +138,11 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
       const cfg = getSyncConfig();
       const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
       
-      const channel = supabase.channel(channelName)
+      const channel = supabase.channel(channelName, {
+        config: {
+          broadcast: { self: false }
+        }
+      })
         .on('broadcast', { event: 'state_update' }, (payload) => {
           if (payload && payload.payload) {
             onUpdate(payload.payload as CloudTournamentState);
@@ -166,9 +172,14 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
           console.log('[Supabase Realtime] Canal status:', status);
         });
 
+      activeRealtimeChannel = channel;
+
       cleanups.push(() => {
         try {
           supabase.removeChannel(channel);
+          if (activeRealtimeChannel === channel) {
+            activeRealtimeChannel = null;
+          }
         } catch (e) {}
       });
     }
@@ -198,15 +209,27 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
 
   // Broadcast through Supabase Realtime Channel
   try {
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
-      const channel = supabase.channel(channelName);
-      await channel.send({
+    if (activeRealtimeChannel) {
+      await activeRealtimeChannel.send({
         type: 'broadcast',
         event: 'state_update',
         payload: state
       });
+    } else {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
+        const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
+        channel.subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.send({
+              type: 'broadcast',
+              event: 'state_update',
+              payload: state
+            });
+          }
+        });
+      }
     }
   } catch (e) {}
 

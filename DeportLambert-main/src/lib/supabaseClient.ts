@@ -65,6 +65,45 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 }
 
+export async function testSupabaseConnection(customUrl?: string, customKey?: string): Promise<{ ok: boolean; message: string }> {
+  const url = (customUrl || getStoredSupabaseConfig().url || DEFAULT_SUPABASE_URL || '').trim();
+  const key = (customKey || getStoredSupabaseConfig().key || DEFAULT_SUPABASE_KEY || '').trim();
+
+  if (!url || !key) {
+    return { ok: false, message: 'Falta la URL o la API Key de Supabase.' };
+  }
+
+  if (key.startsWith('Sb_publishable') || !key.startsWith('eyJ')) {
+    return { 
+      ok: false, 
+      message: 'La clave proporcionada no es válida para PostgREST/Realtime. En Supabase debes usar la clave "anon public" (empieza con "eyJhbGciOi..."). Encuéntrala en tu Dashboard de Supabase en Project Settings > API > Project API keys > anon.' 
+    };
+  }
+
+  try {
+    const tempClient = createClient(url, key, { auth: { persistSession: false } });
+    const { error } = await tempClient.from('tournament_sync').select('id').limit(1);
+    if (error) {
+      if (error.message && (error.message.includes('Invalid API key') || error.message.includes('JWT') || error.message.includes('apiKey'))) {
+        return { 
+          ok: false, 
+          message: 'Error de autenticación en Supabase: Clave API no válida. Debe ser la clave anon pública (JWT).' 
+        };
+      }
+      if (error.message && error.message.includes('does not exist')) {
+        return { 
+          ok: true, 
+          message: 'Conectado a Supabase correctamente. Recuerda ejecutar el script SQL de creación de tablas en el SQL Editor.' 
+        };
+      }
+      return { ok: false, message: `Error Supabase: ${error.message}` };
+    }
+    return { ok: true, message: '¡Conexión y tablas de Supabase verificadas exitosamente!' };
+  } catch (e: any) {
+    return { ok: false, message: `Error de conexión: ${e?.message || e}` };
+  }
+}
+
 // ── Helpers directos de Supabase para Tablas 'partidos', 'equipos', 'posiciones', 'tournament_sync' ──
 
 export async function fetchSupabaseTournamentState(channelId: string = 'deportlambert_live'): Promise<any | null> {
