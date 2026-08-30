@@ -415,7 +415,7 @@ export default function SportsManager() {
     if (localMutationTimeoutRef.current) clearTimeout(localMutationTimeoutRef.current);
 
     setSyncStatus('syncing');
-    const currentDataToPush = customData?.disciplineData || disciplineData;
+    const currentDataToPush = customData?.disciplineData || disciplineDataRef.current || disciplineData;
 
     const payload: CloudTournamentState = {
       version: nextVersion,
@@ -433,7 +433,7 @@ export default function SportsManager() {
 
     localMutationTimeoutRef.current = setTimeout(() => {
       isLocallyMutatingRef.current = false;
-    }, 600);
+    }, 500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
 
   // Sincronización automática con debounce al realizar cambios
@@ -441,7 +441,7 @@ export default function SportsManager() {
     if (!isHydratedRef.current) return;
     const t = setTimeout(() => {
       triggerPushSync();
-    }, 200);
+    }, 150);
     return () => clearTimeout(t);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
 
@@ -457,13 +457,15 @@ export default function SportsManager() {
       const discState = prev[currentDiscKey] || defaultForCurrentDisc;
       const curr = discState.teams;
       const updated = typeof action === 'function' ? action(curr) : action;
-      return {
+      const nextDisciplineData = {
         ...prev,
         [currentDiscKey]: {
           ...discState,
           teams: updated,
         }
       };
+      disciplineDataRef.current = nextDisciplineData;
+      return nextDisciplineData;
     });
   };
 
@@ -472,13 +474,15 @@ export default function SportsManager() {
       const discState = prev[currentDiscKey] || defaultForCurrentDisc;
       const curr = discState.games;
       const updated = typeof action === 'function' ? action(curr) : action;
-      return {
+      const nextDisciplineData = {
         ...prev,
         [currentDiscKey]: {
           ...discState,
           games: updated,
         }
       };
+      disciplineDataRef.current = nextDisciplineData;
+      return nextDisciplineData;
     });
   };
 
@@ -487,13 +491,15 @@ export default function SportsManager() {
       const discState = prev[currentDiscKey] || defaultForCurrentDisc;
       const curr = discState.groups;
       const updated = typeof action === 'function' ? action(curr) : action;
-      return {
+      const nextDisciplineData = {
         ...prev,
         [currentDiscKey]: {
           ...discState,
           groups: updated,
         }
       };
+      disciplineDataRef.current = nextDisciplineData;
+      return nextDisciplineData;
     });
   };
 
