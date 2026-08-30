@@ -6,12 +6,12 @@
  */
 
 import { 
-  getSupabaseClient, 
-  getStoredSupabaseConfig, 
+  getSupabaseClient,  getStoredSupabaseConfig, 
   fetchSupabaseTournamentState, 
   saveSupabaseTournamentState,
   syncGamesToSupabaseTable,
   syncTeamsToSupabaseTable,
+  syncPlayersToSupabaseTable,
   syncStandingsToSupabaseTable
 } from './supabaseClient';
 
@@ -39,29 +39,32 @@ export interface SyncConfig {
 
 export function getSyncConfig(): SyncConfig {
   const spConfig = getStoredSupabaseConfig();
-  if (typeof window === 'undefined') {
-    return { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
-  }
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.supabaseKey && parsed.supabaseKey.startsWith('eyJ') && parsed.supabaseUrl?.includes('nhurcieffcazroqfarrh')) {
-        return { ...parsed, supabaseUrl: parsed.supabaseUrl || spConfig.url, supabaseKey: parsed.supabaseKey || spConfig.key };
-      }
+      return {
+        ...parsed,
+        supabaseUrl: spConfig.url,
+        supabaseKey: spConfig.key,
+        channelId: spConfig.channel,
+      };
     }
   } catch (e) {}
-  const freshSync: SyncConfig = { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
-  try {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(freshSync));
-  } catch (e) {}
-  return freshSync;
+  return {
+    enabled: true,
+    channelId: spConfig.channel,
+    supabaseUrl: spConfig.url,
+    supabaseKey: spConfig.key,
+  };
 }
 
-export function saveSyncConfig(config: SyncConfig) {
+export function saveSyncConfig(config: Partial<SyncConfig>): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    const current = getSyncConfig();
+    const updated = { ...current, ...config };
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(updated));
   } catch (e) {}
 }
 
@@ -69,34 +72,26 @@ export function getLocalState(): CloudTournamentState | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(PRIMARY_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.disciplineData) return parsed;
-    }
+    if (raw) return JSON.parse(raw);
   } catch (e) {}
   return null;
 }
 
-export function saveLocalState(state: CloudTournamentState) {
-  if (typeof window === 'undefined' || !state) return;
+export function saveLocalState(state: CloudTournamentState): void {
+  if (typeof window === 'undefined') return;
   try {
-    const serialized = JSON.stringify(state);
-    localStorage.setItem(PRIMARY_STORAGE_KEY, serialized);
+    localStorage.setItem(PRIMARY_STORAGE_KEY, JSON.stringify(state));
   } catch (e) {}
 }
 
-// Cross-tab Broadcast Channel
-let broadcastChannel: BroadcastChannel | null = null;
-if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-  try {
-    broadcastChannel = new BroadcastChannel('jl360_sync_bus');
-  } catch (e) {}
-}
+const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('jl360_sports_realtime_v4')
+  : null;
 
 let activeRealtimeChannel: any = null;
 
 /**
- * Realtime subscription via Supabase Channel + Postgres Changes + BroadcastChannel
+ * Realtime subscription via Supabase Channel (public-db-changes) + BroadcastChannel
  */
 export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentState) => void): () => void {
   const cleanups: (() => void)[] = [];
@@ -112,14 +107,13 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
     cleanups.push(() => broadcastChannel?.removeEventListener('message', bHandler));
   }
 
-  // 2. Supabase Realtime Channel (Broadcast + Postgres changes)
+  // 2. Supabase Realtime Channel Global (public-db-changes + state_update Broadcast)
   try {
     const supabase = getSupabaseClient();
     if (supabase) {
       const cfg = getSyncConfig();
-      const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
       
-      const channel = supabase.channel(channelName, {
+      const channel = supabase.channel('public-db-changes', {
         config: {
           broadcast: { self: false }
         }
@@ -129,28 +123,18 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
             onUpdate(payload.payload as CloudTournamentState);
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_sync' }, async (payload: any) => {
-          if (payload && payload.new && payload.new.data) {
+        .on('postgres_changes', { event: '*', schema: 'public' }, async (payload: any) => {
+          // Si el cambio fue en tournament_sync y viene el dato completo, aplicar inmediatamente
+          if (payload && payload.table === 'tournament_sync' && payload.new && payload.new.data) {
             onUpdate(payload.new.data as CloudTournamentState);
           } else {
+            // Ante cualquier otro cambio de tabla (partidos, equipos, jugadores, posiciones), refrescar estado
             const fresh = await fetchStateFromCloud(cfg);
             if (fresh) onUpdate(fresh);
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'partidos' }, async () => {
-          const fresh = await fetchStateFromCloud(cfg);
-          if (fresh) onUpdate(fresh);
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, async () => {
-          const fresh = await fetchStateFromCloud(cfg);
-          if (fresh) onUpdate(fresh);
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'posiciones' }, async () => {
-          const fresh = await fetchStateFromCloud(cfg);
-          if (fresh) onUpdate(fresh);
-        })
         .subscribe((status) => {
-          console.log('[Supabase Realtime] Canal status:', status);
+          console.log('[Supabase Realtime public-db-changes] Status:', status);
         });
 
       activeRealtimeChannel = channel;
@@ -228,6 +212,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
         }
         if (disc?.teams) {
           syncTeamsToSupabaseTable(discKey, disc.teams).catch(() => {});
+          syncPlayersToSupabaseTable(discKey, disc.teams).catch(() => {});
         }
         if (disc?.teams && disc?.games) {
           syncStandingsToSupabaseTable(discKey, disc.teams, disc.games, disc.groups || ['Grupo A', 'Grupo B']).catch(() => {});

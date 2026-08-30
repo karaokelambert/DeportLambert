@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   BasketballIcon3D, 
   VolleyballIcon3D, 
@@ -69,33 +69,41 @@ interface DisciplinesPortalProps {
   onSelectDiscipline: (discipline: DisciplineData) => void;
 }
 
+function DisciplineLogoIcon({ disc }: { disc: DisciplineData }) {
+  const [imgError, setImgError] = useState(false);
+
+  if (disc.customLogoUrl && !imgError) {
+    return (
+      <img 
+        src={disc.customLogoUrl} 
+        alt={disc.title} 
+        onError={() => setImgError(true)}
+        className="w-20 h-20 sm:w-24 sm:h-24 max-w-[96px] max-h-[96px] object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)]"
+        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+      />
+    );
+  }
+
+  switch (disc.icon) {
+    case 'basketball':
+      return <BasketballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
+    case 'volleyball':
+      return <VolleyballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
+    case 'futsal':
+      return <FutsalIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
+    case 'baseball':
+      return <BaseballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
+    default:
+      return <BasketballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
+  }
+}
+
 export default function DisciplinesPortal({ 
   disciplines = DISCIPLINES, 
   onSelectDiscipline 
 }: DisciplinesPortalProps) {
   const renderIcon = (disc: DisciplineData) => {
-    if (disc.customLogoUrl) {
-      return (
-        <img 
-          src={disc.customLogoUrl} 
-          alt={disc.title} 
-          className="w-20 h-20 sm:w-24 sm:h-24 max-w-[96px] max-h-[96px] object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)]"
-          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-        />
-      );
-    }
-    switch (disc.icon) {
-      case 'basketball':
-        return <BasketballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
-      case 'volleyball':
-        return <VolleyballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
-      case 'futsal':
-        return <FutsalIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
-      case 'baseball':
-        return <BaseballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
-      default:
-        return <BasketballIcon3D className="w-24 h-24 sm:w-28 sm:h-28" />;
-    }
+    return <DisciplineLogoIcon disc={disc} />;
   };
 
   const activeDisciplines = disciplines;

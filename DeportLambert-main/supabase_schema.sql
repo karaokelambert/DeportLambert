@@ -55,7 +55,19 @@ CREATE TABLE IF NOT EXISTS public.posiciones (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Tabla de Estado Global del Torneo (Multi-Disciplina y Configuración 360)
+-- 4. Tabla de Nómina Oficial de Jugadores (Batch Sync)
+CREATE TABLE IF NOT EXISTS public.jugadores (
+    id TEXT PRIMARY KEY,
+    discipline TEXT NOT NULL DEFAULT 'baloncesto',
+    team_id TEXT NOT NULL,
+    team_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    player_number INTEGER DEFAULT 0,
+    position TEXT DEFAULT '',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 5. Tabla de Estado Global del Torneo (Multi-Disciplina y Configuración 360)
 CREATE TABLE IF NOT EXISTS public.tournament_sync (
     id TEXT PRIMARY KEY, -- 'deportlambert_live'
     data JSONB NOT NULL,
@@ -68,6 +80,8 @@ CREATE TABLE IF NOT EXISTS public.tournament_sync (
 CREATE INDEX IF NOT EXISTS idx_equipos_discipline ON public.equipos(discipline);
 CREATE INDEX IF NOT EXISTS idx_partidos_discipline ON public.partidos(discipline);
 CREATE INDEX IF NOT EXISTS idx_posiciones_discipline ON public.posiciones(discipline);
+CREATE INDEX IF NOT EXISTS idx_jugadores_team ON public.jugadores(team_id);
+CREATE INDEX IF NOT EXISTS idx_jugadores_discipline ON public.jugadores(discipline);
 
 -- ==============================================================================
 -- Políticas de Seguridad RLS (Row Level Security)
@@ -77,6 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_posiciones_discipline ON public.posiciones(discip
 ALTER TABLE public.equipos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.partidos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posiciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jugadores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_sync ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Lectura pública de equipos" ON public.equipos;
@@ -93,6 +108,11 @@ DROP POLICY IF EXISTS "Lectura pública de posiciones" ON public.posiciones;
 DROP POLICY IF EXISTS "Escritura pública de posiciones" ON public.posiciones;
 CREATE POLICY "Lectura pública de posiciones" ON public.posiciones FOR SELECT USING (true);
 CREATE POLICY "Escritura pública de posiciones" ON public.posiciones FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Lectura pública de jugadores" ON public.jugadores;
+DROP POLICY IF EXISTS "Escritura pública de jugadores" ON public.jugadores;
+CREATE POLICY "Lectura pública de jugadores" ON public.jugadores FOR SELECT USING (true);
+CREATE POLICY "Escritura pública de jugadores" ON public.jugadores FOR ALL USING (true);
 
 DROP POLICY IF EXISTS "Lectura pública de sync" ON public.tournament_sync;
 DROP POLICY IF EXISTS "Escritura pública de sync" ON public.tournament_sync;
@@ -112,6 +132,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'posiciones') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.posiciones;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'jugadores') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.jugadores;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'tournament_sync') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_sync;

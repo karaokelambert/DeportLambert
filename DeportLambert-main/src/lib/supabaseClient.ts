@@ -193,7 +193,7 @@ export async function syncTeamsToSupabaseTable(discipline: string, teams: any[])
       delegado: t.delegado || '',
       telefono: t.telefono || '',
       group_name: t.group || 'Grupo A',
-      logo_url: t.logoUrl || '',
+      logo_url: t.logoUrl || t.logo_url || t.logo || t.image_url || '',
       jugadores: t.jugadores || [],
       delegate_pin: t.delegatePin || '0000',
       updated_at: new Date().toISOString()
@@ -202,6 +202,42 @@ export async function syncTeamsToSupabaseTable(discipline: string, teams: any[])
     const { error } = await client
       .from('equipos')
       .upsert(rows, { onConflict: 'id' });
+
+    return !error;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function syncPlayersToSupabaseTable(discipline: string, teams: any[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !teams || teams.length === 0) return false;
+  try {
+    const playerRows: any[] = [];
+    teams.forEach(team => {
+      if (Array.isArray(team.jugadores)) {
+        team.jugadores.forEach((playerName: string, idx: number) => {
+          if (playerName && playerName.trim()) {
+            playerRows.push({
+              id: `${discipline}_${team.id}_p${idx + 1}`,
+              discipline,
+              team_id: `${discipline}_${team.id}`,
+              team_name: team.name,
+              name: playerName.trim(),
+              player_number: idx + 1,
+              position: '',
+              updated_at: new Date().toISOString()
+            });
+          }
+        });
+      }
+    });
+
+    if (playerRows.length === 0) return true;
+
+    const { error } = await client
+      .from('jugadores')
+      .upsert(playerRows, { onConflict: 'id' });
 
     return !error;
   } catch (e) {
