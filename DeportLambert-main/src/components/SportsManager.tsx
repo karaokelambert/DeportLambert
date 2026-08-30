@@ -312,6 +312,11 @@ export default function SportsManager() {
   });
 
   // Inicialización de datos desde localStorage y nube con prioridad a datos reales
+  const disciplineDataRef = useRef(disciplineData);
+  disciplineDataRef.current = disciplineData;
+
+  const isLocallyMutatingRef = useRef(false);
+
   useEffect(() => {
     async function initCloud() {
       try {
@@ -329,17 +334,15 @@ export default function SportsManager() {
           }
         }
 
-        // 2. Consultar la nube y combinar solo si la nube tiene datos más recientes
+        // 2. Consultar la nube y sincronizar
         const remote = await fetchStateFromCloud(syncConfig);
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
-          if (!local || (remote.updatedAt && remote.updatedAt > (local.updatedAt || 0))) {
-            setDisciplineData(remote.disciplineData);
-            if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-            if (remote.branding) setBranding(remote.branding);
-            if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-            localUpdatedAtRef.current = remote.updatedAt;
-            setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
-          }
+          setDisciplineData(remote.disciplineData);
+          if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+          if (remote.branding) setBranding(remote.branding);
+          if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+          localUpdatedAtRef.current = remote.updatedAt || Date.now();
+          setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
         }
         setSyncStatus('synced');
       } catch (e) {
@@ -351,16 +354,22 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Escuchar actualizaciones en tiempo real (Supabase Channel + Broadcast)
+  // Escuchar actualizaciones en tiempo real (Supabase Channel WebSockets + Broadcast)
   useEffect(() => {
     const unsub = subscribeToRealtimeUpdates((remote) => {
-      if (remote && remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current) {
-        if (remote.disciplineData) setDisciplineData(remote.disciplineData);
+      if (!remote || !remote.disciplineData) return;
+      if (isLocallyMutatingRef.current) return;
+
+      const remoteStr = JSON.stringify(remote.disciplineData);
+      const localStr = JSON.stringify(disciplineDataRef.current);
+
+      if (remoteStr !== localStr || (remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current)) {
+        setDisciplineData(remote.disciplineData);
         if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
         if (remote.branding) setBranding(remote.branding);
         if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-        localUpdatedAtRef.current = remote.updatedAt;
-        setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
+        localUpdatedAtRef.current = remote.updatedAt || Date.now();
+        setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
         setSyncStatus('synced');
       }
     });
@@ -370,18 +379,22 @@ export default function SportsManager() {
   // Polling periódico rápido cada 2.5s para sincronizar marcadores y juegos entre PC y teléfonos
   useEffect(() => {
     const timer = setInterval(async () => {
-      if (!syncConfig.enabled) return;
+      if (!syncConfig.enabled || isLocallyMutatingRef.current) return;
       try {
         const remote = await fetchStateFromCloud(syncConfig);
-        if (remote && remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current) {
-          setSyncStatus('syncing');
-          if (remote.disciplineData) setDisciplineData(remote.disciplineData);
-          if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-          if (remote.branding) setBranding(remote.branding);
-          if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
-          localUpdatedAtRef.current = remote.updatedAt;
-          setLastSyncTime(new Date(remote.updatedAt).toLocaleTimeString());
-          setSyncStatus('synced');
+        if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
+          const remoteStr = JSON.stringify(remote.disciplineData);
+          const localStr = JSON.stringify(disciplineDataRef.current);
+
+          if (remoteStr !== localStr || (remote.updatedAt && remote.updatedAt > localUpdatedAtRef.current)) {
+            setDisciplineData(remote.disciplineData);
+            if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
+            if (remote.branding) setBranding(remote.branding);
+            if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+            localUpdatedAtRef.current = remote.updatedAt || Date.now();
+            setLastSyncTime(new Date(remote.updatedAt || Date.now()).toLocaleTimeString());
+            setSyncStatus('synced');
+          }
         }
       } catch (e) {}
     }, 2500);
@@ -393,9 +406,10 @@ export default function SportsManager() {
   const triggerPushSync = useCallback(async (customData?: Partial<CloudTournamentState>) => {
     const now = Date.now();
     localUpdatedAtRef.current = now;
+    isLocallyMutatingRef.current = true;
     setSyncStatus('syncing');
     const payload: CloudTournamentState = {
-      version: 3,
+      version: 4,
       updatedAt: now,
       updatedBy: userName || role,
       disciplineData: customData?.disciplineData || disciplineData,
@@ -406,6 +420,9 @@ export default function SportsManager() {
     const ok = await pushStateToCloud(payload, syncConfig);
     setSyncStatus(ok ? 'synced' : 'offline');
     setLastSyncTime(new Date(now).toLocaleTimeString());
+    setTimeout(() => {
+      isLocallyMutatingRef.current = false;
+    }, 500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
 
   // Sincronización automática con debounce al realizar cambios
@@ -413,7 +430,7 @@ export default function SportsManager() {
     if (!isHydratedRef.current) return;
     const t = setTimeout(() => {
       triggerPushSync();
-    }, 600);
+    }, 300);
     return () => clearTimeout(t);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, triggerPushSync]);
 

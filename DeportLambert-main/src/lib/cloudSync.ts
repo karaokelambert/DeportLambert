@@ -55,10 +55,16 @@ export function getSyncConfig(): SyncConfig {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...parsed, supabaseUrl: parsed.supabaseUrl || spConfig.url, supabaseKey: parsed.supabaseKey || spConfig.key };
+      if (parsed.supabaseKey && parsed.supabaseKey.startsWith('eyJ') && parsed.supabaseUrl?.includes('nhurcieffcazroqfarrh')) {
+        return { ...parsed, supabaseUrl: parsed.supabaseUrl || spConfig.url, supabaseKey: parsed.supabaseKey || spConfig.key };
+      }
     }
   } catch (e) {}
-  return { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
+  const freshSync: SyncConfig = { enabled: true, channelId: spConfig.channel, supabaseUrl: spConfig.url, supabaseKey: spConfig.key };
+  try {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(freshSync));
+  } catch (e) {}
+  return freshSync;
 }
 
 export function saveSyncConfig(config: SyncConfig) {

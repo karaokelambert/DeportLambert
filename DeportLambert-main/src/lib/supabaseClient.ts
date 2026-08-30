@@ -22,10 +22,16 @@ export function getStoredSupabaseConfig(): SupabaseConfig {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.url && parsed.key) return parsed;
+      if (parsed.url && parsed.key && parsed.key.startsWith('eyJ') && parsed.url.includes('nhurcieffcazroqfarrh')) {
+        return parsed;
+      }
     }
   } catch (e) {}
-  return { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
+  const freshConfig: SupabaseConfig = { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
+  try {
+    localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(freshConfig));
+  } catch (e) {}
+  return freshConfig;
 }
 
 export function saveStoredSupabaseConfig(config: SupabaseConfig) {
