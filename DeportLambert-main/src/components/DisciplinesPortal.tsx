@@ -136,6 +136,28 @@ export default function DisciplinesPortal({
         <p className="text-slate-900 font-bold text-base md:text-lg text-center max-w-2xl mx-auto drop-shadow-sm my-3 leading-relaxed">
           Cada disciplina tiene su propio sistema de torneo independiente con equipos, jugadores, calendario y resultados.
         </p>
+
+        {/* Botón Destacado de Instalación PWA */}
+        <div className="pt-2 flex justify-center">
+          <button
+            onClick={async () => {
+              const promptEvent = (window as unknown as { deferredPrompt?: { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } }).deferredPrompt;
+              if (promptEvent && typeof promptEvent.prompt === 'function') {
+                try {
+                  await promptEvent.prompt();
+                } catch {
+                  window.dispatchEvent(new CustomEvent('open-pwa-modal'));
+                }
+              } else {
+                window.dispatchEvent(new CustomEvent('open-pwa-modal'));
+              }
+            }}
+            className="inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl shadow-orange-950/40 hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/60"
+          >
+            <span className="text-base">📲</span>
+            <span>Instalar App JL Sports 360</span>
+          </button>
+        </div>
       </div>
 
       {/* ── Tarjetas de Disciplinas (Cards) ── */}

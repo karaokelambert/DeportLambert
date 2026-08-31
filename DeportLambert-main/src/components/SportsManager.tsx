@@ -82,6 +82,7 @@ import {
 } from 'lucide-react';
 import DisciplinesPortal, { DISCIPLINES, DisciplineData } from './DisciplinesPortal';
 import Navbar360 from './Navbar360';
+import PWAInstallBanner from './PWAInstallBanner';
 import { SuperAdminUser, CloudSyncModal } from './PortalModals';
 import { BasketballIcon3D, VolleyballIcon3D, FutsalIcon3D, BaseballIcon3D, GoldTrophyIcon3D } from './SportsIcons3D';
 import { 
@@ -800,6 +801,7 @@ export default function SportsManager() {
             }} 
           />
         </main>
+        <PWAInstallBanner />
         <footer className="w-full py-4 text-center border-t border-slate-800/80 bg-slate-950/60 backdrop-blur">
           <p className="text-[10px] uppercase tracking-[0.3em] font-black text-slate-400/60">
             {branding.title} • {branding.subtitle}
@@ -1006,6 +1008,8 @@ export default function SportsManager() {
           </div>
         </div>
 
+        <PWAInstallBanner />
+
         <footer className="w-full py-4 text-center border-t border-slate-800/80 bg-slate-950/60 backdrop-blur">
           <p className="text-[10px] uppercase tracking-[0.3em] font-black text-slate-400/60">
             {branding.title} • {branding.season}
@@ -1040,8 +1044,15 @@ export default function SportsManager() {
         {/* Logo & Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800/80 flex items-center justify-between overflow-hidden shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-950/60 p-2">
-              <GoldTrophyIcon3D className="w-full h-full" />
+            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-950/60 p-0.5 overflow-hidden">
+              <img 
+                src="/pwa-192x192.png" 
+                alt="Logo JL Sports Club 360" 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
             {sidebarOpen && (
               <div className="overflow-hidden">
@@ -1457,6 +1468,7 @@ export default function SportsManager() {
         lastSyncTime={lastSyncTime}
         onForceSync={triggerPushSync}
       />
+      <PWAInstallBanner />
     </div>
   );
 }

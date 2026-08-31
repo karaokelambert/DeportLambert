@@ -1,15 +1,21 @@
 // ============================================================
-// Service Worker – JL Sports Club 360
-// Versión de Caché PWA: jl-sports-hub-v6
-// Módulos: Cache & Offline Support + Push Notifications
+// Service Worker – JL Sports Club 360 (SportsHub360)
+// Versión de Caché PWA: jl-sports-hub-v7
+// Módulos: Cache & Offline Support + Push Notifications + App Icons
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v6';
+const CACHE_NAME = 'jl-sports-hub-v7';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/favicon.ico',
+  '/favicon.svg',
+  '/pwa-192x192.png',
+  '/pwa-512x512.png',
+  '/maskable-icon.png',
+  '/apple-touch-icon.png',
   '/icon-192.png',
-  '/icon-512.png',
+  '/icon-512.png'
 ];
 
 // ── INSTALL ─────────────────────────────────────────────────
@@ -55,20 +61,20 @@ self.addEventListener('fetch', (event) => {
 
 // ── PUSH NOTIFICATIONS ──────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'JL Sports Club 360', body: 'Actualización disponible', icon: '/icon-192.png' };
+  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: '/pwa-192x192.png' };
 
   try {
     if (event.data) {
       data = { ...data, ...event.data.json() };
     }
   } catch (_) {
-    // Si el payload no es JSON válido, usamos defaults
+    // Default fallback
   }
 
   const options = {
     body: data.body,
-    icon: data.icon || '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: data.icon || '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
     vibrate: [200, 100, 200],
     tag: 'jl-sports-update',
     renotify: true,
@@ -88,13 +94,11 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Si hay una pestaña abierta, enfocamos en ella
       for (const client of clientList) {
         if (client.url.includes(targetUrl) && 'focus' in client) {
           return client.focus();
         }
       }
-      // Si no, abrimos una nueva
       if (self.clients.openWindow) {
         return self.clients.openWindow(targetUrl);
       }

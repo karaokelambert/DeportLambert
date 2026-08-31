@@ -39,6 +39,23 @@ export default function Navbar360({
 }: Navbar360Props) {
   const [modalOpen, setModalOpen] = useState<'install' | 'share' | 'settings' | null>(null);
 
+  const handleInstallNavClick = async () => {
+    const promptEvent = (window as unknown as { deferredPrompt?: { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } }).deferredPrompt;
+    if (promptEvent && typeof promptEvent.prompt === 'function') {
+      try {
+        await promptEvent.prompt();
+        const choice = await promptEvent.userChoice;
+        if (choice.outcome === 'accepted') {
+          (window as unknown as { deferredPrompt?: unknown }).deferredPrompt = null;
+        }
+      } catch {
+        setModalOpen('install');
+      }
+    } else {
+      setModalOpen('install');
+    }
+  };
+
   return (
     <>
       <header className="w-full sticky top-0 z-40 bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
@@ -49,9 +66,16 @@ export default function Navbar360({
             onClick={onBackToPortal} 
             className={`flex items-center gap-3.5 group ${onBackToPortal ? 'cursor-pointer' : ''}`}
           >
-            {/* Ícono de Copa Dorada 3D */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-900/60 via-slate-900 to-amber-950/40 p-2 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <GoldTrophyIcon3D className="w-8 h-8" />
+            {/* Logo Oficial JL Sports Club */}
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-900/60 via-slate-900 to-amber-950/40 p-1 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform overflow-hidden">
+              <img 
+                src="/pwa-192x192.png" 
+                alt="Logo JL Sports Club 360" 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
 
             {/* Textos */}
@@ -85,8 +109,8 @@ export default function Navbar360({
 
             {/* 1. Instalar App */}
             <button
-              onClick={() => setModalOpen('install')}
-              className="btn-gold-gradient px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black uppercase text-[11px] sm:text-xs text-slate-950 flex items-center gap-2 shadow-lg tracking-wider"
+              onClick={handleInstallNavClick}
+              className="btn-gold-gradient px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black uppercase text-[11px] sm:text-xs text-slate-950 flex items-center gap-2 shadow-lg tracking-wider cursor-pointer active:scale-95 transition-all"
               title="Instalar App en tu dispositivo"
             >
               <Download className="w-4 h-4 stroke-[2.5]" />
