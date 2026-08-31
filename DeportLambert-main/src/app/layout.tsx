@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   icons: {
     icon: [
+      { url: '/logo.png', sizes: 'any' },
       { url: '/favicon.ico', sizes: 'any' },
       { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
     ],
     apple: [
       { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      { url: '/logo.png', sizes: 'any' },
     ],
   },
 };
@@ -31,9 +33,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <title>JL Sports Club 360</title>
         <link rel="manifest" href="/manifest.json" />
+        <link rel="icon" href="/logo.png" sizes="any" />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="theme-color" content="#0b0f19" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

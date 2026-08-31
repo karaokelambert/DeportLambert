@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, Share2, Settings } from 'lucide-react';
-import { GoldTrophyIcon3D } from './SportsIcons3D';
-import { InstallAppModal, ShareAppModal, SettingsAppModal } from './PortalModals';
+import { ShareAppModal, SettingsAppModal } from './PortalModals';
 
 import { DisciplineData } from './DisciplinesPortal';
 import { SuperAdminUser } from './PortalModals';
@@ -37,22 +36,65 @@ export default function Navbar360({
   admins,
   onUpdateAdmins,
 }: Navbar360Props) {
-  const [modalOpen, setModalOpen] = useState<'install' | 'share' | 'settings' | null>(null);
+  const [modalOpen, setModalOpen] = useState<'share' | 'settings' | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const isStandalone = 
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+
+    if (isStandalone) {
+      setIsInstalled(true);
+      return;
+    }
+
+    if (window.deferredPrompt) {
+      setDeferredPrompt(window.deferredPrompt);
+    }
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      window.deferredPrompt = e as any;
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      window.deferredPrompt = null;
+    };
+
+    const handlePromptAvailable = () => {
+      if (window.deferredPrompt) setDeferredPrompt(window.deferredPrompt);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('pwa-prompt-available', handlePromptAvailable);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('pwa-prompt-available', handlePromptAvailable);
+    };
+  }, []);
 
   const handleInstallNavClick = async () => {
-    const promptEvent = (window as unknown as { deferredPrompt?: { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } }).deferredPrompt;
+    const promptEvent = deferredPrompt || window.deferredPrompt;
     if (promptEvent && typeof promptEvent.prompt === 'function') {
       try {
         await promptEvent.prompt();
         const choice = await promptEvent.userChoice;
         if (choice.outcome === 'accepted') {
-          (window as unknown as { deferredPrompt?: unknown }).deferredPrompt = null;
+          setIsInstalled(true);
+          setDeferredPrompt(null);
+          window.deferredPrompt = null;
         }
-      } catch {
-        setModalOpen('install');
+      } catch (err) {
+        console.error('Error invoking prompt:', err);
       }
-    } else {
-      setModalOpen('install');
     }
   };
 
@@ -69,11 +111,16 @@ export default function Navbar360({
             {/* Logo Oficial JL Sports Club */}
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-900/60 via-slate-900 to-amber-950/40 p-1 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform overflow-hidden">
               <img 
-                src="/pwa-192x192.png" 
+                src="/logo.png" 
                 alt="Logo JL Sports Club 360" 
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+                  const el = e.currentTarget;
+                  if (!el.src.includes('/DeportLambert/')) {
+                    el.src = '/DeportLambert/logo.png';
+                  } else if (!el.src.includes('./')) {
+                    el.src = './logo.png';
+                  }
                 }}
               />
             </div>
@@ -107,15 +154,17 @@ export default function Navbar360({
               <span className="h-2.5 w-2.5 rounded-full bg-[#00ff88] shadow-[0_0_8px_#00ff88]" />
             </div>
 
-            {/* 1. Instalar App */}
-            <button
-              onClick={handleInstallNavClick}
-              className="btn-gold-gradient px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black uppercase text-[11px] sm:text-xs text-slate-950 flex items-center gap-2 shadow-lg tracking-wider cursor-pointer active:scale-95 transition-all"
-              title="Instalar App en tu dispositivo"
-            >
-              <Download className="w-4 h-4 stroke-[2.5]" />
-              <span className="hidden sm:inline">Instalar App</span>
-            </button>
+            {/* 1. Botón Instalar App (Solo visible cuando beforeinstallprompt está activo y la app no está instalada) */}
+            {deferredPrompt && !isInstalled && (
+              <button
+                onClick={handleInstallNavClick}
+                className="btn-gold-gradient px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black uppercase text-[11px] sm:text-xs text-slate-950 flex items-center gap-2 shadow-lg tracking-wider cursor-pointer active:scale-95 transition-all animate-pulse"
+                title="Instalar App en tu dispositivo"
+              >
+                <Download className="w-4 h-4 stroke-[2.5]" />
+                <span className="hidden sm:inline">Instalar App</span>
+              </button>
+            )}
 
             {/* 2. Compartir App */}
             <button
@@ -141,7 +190,6 @@ export default function Navbar360({
       </header>
 
       {/* Modales Interactivos */}
-      <InstallAppModal isOpen={modalOpen === 'install'} onClose={() => setModalOpen(null)} />
       <ShareAppModal isOpen={modalOpen === 'share'} onClose={() => setModalOpen(null)} />
       <SettingsAppModal 
         isOpen={modalOpen === 'settings'} 

@@ -1046,11 +1046,16 @@ export default function SportsManager() {
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-950/60 p-0.5 overflow-hidden">
               <img 
-                src="/pwa-192x192.png" 
+                src="/logo.png" 
                 alt="Logo JL Sports Club 360" 
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+                  const el = e.currentTarget;
+                  if (!el.src.includes('/DeportLambert/')) {
+                    el.src = '/DeportLambert/logo.png';
+                  } else if (!el.src.includes('./')) {
+                    el.src = './logo.png';
+                  }
                 }}
               />
             </div>

@@ -1,13 +1,15 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v7
-// Módulos: Cache & Offline Support + Push Notifications + App Icons
+// Versión de Caché PWA: jl-sports-hub-v8
+// Módulos: Cache & Offline Support + Push Notifications + App Icons & Logo
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v7';
+const CACHE_NAME = 'jl-sports-hub-v8';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/logo.png',
+  '/icon.png',
   '/favicon.ico',
   '/favicon.svg',
   '/pwa-192x192.png',
@@ -61,7 +63,7 @@ self.addEventListener('fetch', (event) => {
 
 // ── PUSH NOTIFICATIONS ──────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: '/pwa-192x192.png' };
+  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: '/logo.png' };
 
   try {
     if (event.data) {
@@ -73,7 +75,7 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/pwa-192x192.png',
+    icon: data.icon || '/logo.png',
     badge: '/pwa-192x192.png',
     vibrate: [200, 100, 200],
     tag: 'jl-sports-update',

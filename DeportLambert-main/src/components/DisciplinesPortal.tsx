@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BasketballIcon3D, 
   VolleyballIcon3D, 
@@ -102,6 +102,67 @@ export default function DisciplinesPortal({
   disciplines = DISCIPLINES, 
   onSelectDiscipline 
 }: DisciplinesPortalProps) {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const isStandalone = 
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+
+    if (isStandalone) {
+      setIsInstalled(true);
+      return;
+    }
+
+    if (window.deferredPrompt) {
+      setDeferredPrompt(window.deferredPrompt);
+    }
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      window.deferredPrompt = e as any;
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      window.deferredPrompt = null;
+    };
+
+    const handlePromptAvailable = () => {
+      if (window.deferredPrompt) setDeferredPrompt(window.deferredPrompt);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('pwa-prompt-available', handlePromptAvailable);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('pwa-prompt-available', handlePromptAvailable);
+    };
+  }, []);
+
+  const handleDirectInstall = async () => {
+    const promptEvent = deferredPrompt || window.deferredPrompt;
+    if (promptEvent && typeof promptEvent.prompt === 'function') {
+      try {
+        await promptEvent.prompt();
+        const choice = await promptEvent.userChoice;
+        if (choice.outcome === 'accepted') {
+          setIsInstalled(true);
+          setDeferredPrompt(null);
+          window.deferredPrompt = null;
+        }
+      } catch (err) {
+        console.error('Error invoking prompt in portal:', err);
+      }
+    }
+  };
+
   const renderIcon = (disc: DisciplineData) => {
     return <DisciplineLogoIcon disc={disc} />;
   };
@@ -137,27 +198,18 @@ export default function DisciplinesPortal({
           Cada disciplina tiene su propio sistema de torneo independiente con equipos, jugadores, calendario y resultados.
         </p>
 
-        {/* Botón Destacado de Instalación PWA */}
-        <div className="pt-2 flex justify-center">
-          <button
-            onClick={async () => {
-              const promptEvent = (window as unknown as { deferredPrompt?: { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> } }).deferredPrompt;
-              if (promptEvent && typeof promptEvent.prompt === 'function') {
-                try {
-                  await promptEvent.prompt();
-                } catch {
-                  window.dispatchEvent(new CustomEvent('open-pwa-modal'));
-                }
-              } else {
-                window.dispatchEvent(new CustomEvent('open-pwa-modal'));
-              }
-            }}
-            className="inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl shadow-orange-950/40 hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/60"
-          >
-            <span className="text-base">📲</span>
-            <span>Instalar App JL Sports 360</span>
-          </button>
-        </div>
+        {/* Botón Destacado de Instalación PWA (Solo visible cuando beforeinstallprompt está activo) */}
+        {deferredPrompt && !isInstalled && (
+          <div className="pt-2 flex justify-center">
+            <button
+              onClick={handleDirectInstall}
+              className="inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl shadow-orange-950/40 hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/60 animate-bounce-subtle"
+            >
+              <span className="text-base">📲</span>
+              <span>Instalar App JL Sports 360</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Tarjetas de Disciplinas (Cards) ── */}
