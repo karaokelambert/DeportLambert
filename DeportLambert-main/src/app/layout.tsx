@@ -11,18 +11,18 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'JL Sports Club 360 – Centro de Gestión Deportiva',
   description: 'JL Sports Club 360 – Centro de Gestión Deportiva Multi-Disciplina',
-  manifest: '/manifest.json',
+  manifest: './manifest.json',
   icons: {
     icon: [
-      { url: '/logo.png', sizes: 'any' },
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: './logo.png', sizes: 'any' },
+      { url: './favicon.ico', sizes: 'any' },
+      { url: './favicon.svg', type: 'image/svg+xml' },
+      { url: './pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: './pwa-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
-      { url: '/logo.png', sizes: 'any' },
+      { url: './apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      { url: './logo.png', sizes: 'any' },
     ],
   },
 };
@@ -32,12 +32,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <head>
         <title>JL Sports Club 360</title>
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="icon" href="/logo.png" sizes="any" />
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="manifest" href="./manifest.json" />
+        <link rel="icon" href="./logo.png" sizes="any" />
+        <link rel="icon" href="./favicon.ico" sizes="any" />
+        <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href="./logo.png" />
         <meta name="theme-color" content="#0b0f19" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -64,10 +64,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               });
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(function(reg) {
-                    console.log('[JL360] Service Worker registrado:', reg.scope);
+                  navigator.serviceWorker.register('./sw.js').then(function(reg) {
+                    console.log('[JL360] Service Worker registrado con scope:', reg.scope);
                   }).catch(function(err) {
-                    console.warn('[JL360] Service Worker no registrado:', err);
+                    console.log('SW error:', err);
                   });
                 });
               }

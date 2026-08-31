@@ -1,30 +1,32 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v8
+// Versión de Caché PWA: jl-sports-hub-v9
 // Módulos: Cache & Offline Support + Push Notifications + App Icons & Logo
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v8';
+const CACHE_NAME = 'jl-sports-hub-v9';
 const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/logo.png',
-  '/icon.png',
-  '/favicon.ico',
-  '/favicon.svg',
-  '/pwa-192x192.png',
-  '/pwa-512x512.png',
-  '/maskable-icon.png',
-  '/apple-touch-icon.png',
-  '/icon-192.png',
-  '/icon-512.png'
+  './',
+  './manifest.json',
+  './logo.png',
+  './icon.png',
+  './favicon.ico',
+  './favicon.svg',
+  './pwa-192x192.png',
+  './pwa-512x512.png',
+  './maskable-icon.png',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 // ── INSTALL ─────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch(() => {});
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
+        console.log('[SW] Cache addAll warning:', err);
+      });
     })
   );
   self.skipWaiting();
@@ -63,7 +65,7 @@ self.addEventListener('fetch', (event) => {
 
 // ── PUSH NOTIFICATIONS ──────────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: '/logo.png' };
+  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: './logo.png' };
 
   try {
     if (event.data) {
@@ -75,12 +77,12 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/logo.png',
-    badge: '/pwa-192x192.png',
+    icon: data.icon || './logo.png',
+    badge: './pwa-192x192.png',
     vibrate: [200, 100, 200],
     tag: 'jl-sports-update',
     renotify: true,
-    data: { url: data.url || '/' },
+    data: { url: data.url || './' },
   };
 
   event.waitUntil(
@@ -92,7 +94,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
+  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : './';
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
