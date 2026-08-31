@@ -1,10 +1,11 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v9
-// Módulos: Cache & Offline Support + Push Notifications + App Icons & Logo
+// Versión de Caché PWA: jl-sports-hub-v3
+// Módulos: NetworkFirst para HTML/API + Bypass Supabase Realtime + Offline Fallback
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v9';
+const CACHE_NAME = 'jl-sports-hub-v3';
+
 const STATIC_ASSETS = [
   './',
   './manifest.json',
@@ -15,65 +16,137 @@ const STATIC_ASSETS = [
   './pwa-192x192.png',
   './pwa-512x512.png',
   './maskable-icon.png',
-  './apple-touch-icon.png',
-  './icon-192.png',
-  './icon-512.png'
+  './apple-touch-icon.png'
 ];
 
-// ── INSTALL ─────────────────────────────────────────────────
+// ── 1. INSTALL: Precacheo mínimo & Skip Waiting inmediato ─────
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
-        console.log('[SW] Cache addAll warning:', err);
+        console.log('[SW] Cache precache warning:', err);
       });
     })
   );
-  self.skipWaiting();
 });
 
-// ── ACTIVATE ────────────────────────────────────────────────
+// ── 2. ACTIVATE: Purgar cachés antiguas y tomar control de clientes ──
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[SW] Eliminando caché obsoleta:', key);
+            return caches.delete(key);
+          }
+        })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+      return self.clients.claim();
+    }).then(() => {
+      // Notificar a las pestañas abiertas para refrescar estado en vivo
+      return self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'SW_ACTIVATED', version: CACHE_NAME });
+        });
+      });
+    })
   );
 });
 
-// ── FETCH ───────────────────────────────────────────────────
+// ── 3. FETCH: NetworkFirst para HTML/Vistas + Bypass Supabase/API ────
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  const req = event.request;
+  const url = req.url;
+
+  // Solo interceptar peticiones GET
+  if (req.method !== 'GET') return;
+
+  // BYPASS COMPLETO para Supabase, WebSockets y rutas API (Nunca almacenar en caché)
+  if (
+    url.includes('supabase.co') ||
+    url.includes('supabase.in') ||
+    url.includes('/rest/v1/') ||
+    url.includes('/realtime/') ||
+    url.includes('/api/') ||
+    url.startsWith('ws:') ||
+    url.startsWith('wss:')
+  ) {
+    return; // Dejar pasar directo a la red sin interceptar
+  }
+
+  // ESTRATEGIA 1: NetworkFirst para Navegación / HTML (Siempre obtener la versión viva)
+  if (req.mode === 'navigate' || (req.headers.get('accept') && req.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(req);
+          if (cachedResponse) return cachedResponse;
+          const fallback = await caches.match('./') || await caches.match('/');
+          return fallback || new Response('Sin conexión a Internet', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+        })
+    );
+    return;
+  }
+
+  // ESTRATEGIA 2: NetworkFirst con fallback a Caché para scripts y estilos actualizados
+  if (url.includes('/_next/') || url.includes('.js') || url.includes('.css')) {
+    event.respondWith(
+      fetch(req)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // ESTRATEGIA 3: CacheFirst con actualización de fondo para imágenes y logos estáticos
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+    caches.match(req).then((cachedResponse) => {
+      if (cachedResponse) {
+        // Actualizar en segundo plano
+        fetch(req).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, networkResponse));
+          }
+        }).catch(() => {});
+        return cachedResponse;
+      }
+
+      return fetch(req).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, responseClone));
         }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
+        return networkResponse;
+      });
+    })
   );
 });
 
-// ── PUSH NOTIFICATIONS ──────────────────────────────────────
+// ── 4. PUSH NOTIFICATIONS ───────────────────────────────────
 self.addEventListener('push', (event) => {
-  let data = { title: 'JL Sports Club 360', body: 'Actualización deportiva disponible', icon: './logo.png' };
+  let data = { title: 'JL Sports Club 360', body: 'Marcador en vivo actualizado', icon: './logo.png' };
 
   try {
     if (event.data) {
       data = { ...data, ...event.data.json() };
     }
-  } catch (_) {
-    // Default fallback
-  }
+  } catch (_) {}
 
   const options = {
     body: data.body,
@@ -90,10 +163,9 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// ── NOTIFICATIONCLICK ────────────────────────────────────────
+// ── 5. NOTIFICATION CLICK ───────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : './';
 
   event.waitUntil(

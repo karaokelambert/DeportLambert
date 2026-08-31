@@ -6,7 +6,7 @@
  */
 
 import { 
-  getSupabaseClient,  getStoredSupabaseConfig, 
+  getSupabaseClient, getStoredSupabaseConfig, 
   fetchSupabaseTournamentState, 
   saveSupabaseTournamentState,
   syncGamesToSupabaseTable,
@@ -25,9 +25,8 @@ export interface CloudTournamentState {
   registeredAdmins?: any;
 }
 
-const PRIMARY_STORAGE_KEY = 'jl360_cloud_state_v4';
-
-const CONFIG_KEY = 'jl360_sync_config_v4';
+const PRIMARY_STORAGE_KEY = 'jl360_cloud_state_v5';
+const CONFIG_KEY = 'jl360_sync_config_v5';
 
 export interface SyncConfig {
   enabled: boolean;
@@ -53,7 +52,7 @@ export function getSyncConfig(): SyncConfig {
   } catch (e) {}
   return {
     enabled: true,
-    channelId: spConfig.channel,
+    channelId: spConfig.channel || 'deportlambert_live',
     supabaseUrl: spConfig.url,
     supabaseKey: spConfig.key,
   };
@@ -85,13 +84,13 @@ export function saveLocalState(state: CloudTournamentState): void {
 }
 
 const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
-  ? new BroadcastChannel('jl360_sports_realtime_v4')
+  ? new BroadcastChannel('jl360_sports_realtime_v5')
   : null;
 
 let activeRealtimeChannel: any = null;
 
 /**
- * Realtime subscription via Supabase Channel (public-db-changes) + BroadcastChannel
+ * Realtime subscription via Supabase Channel (public-db-changes + tournament_sync) + BroadcastChannel
  */
 export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentState) => void): () => void {
   const cleanups: (() => void)[] = [];
@@ -107,34 +106,45 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
     cleanups.push(() => broadcastChannel?.removeEventListener('message', bHandler));
   }
 
-  // 2. Supabase Realtime Channel Global (public-db-changes + state_update Broadcast)
+  // 2. Supabase Realtime Channel Global (Escucha activa de WebSockets y Postgres Changes)
   try {
     const supabase = getSupabaseClient();
     if (supabase) {
       const cfg = getSyncConfig();
+      const channelName = `realtime_tourney_${cfg.channelId || 'deportlambert_live'}_${Date.now()}`;
       
-      const channel = supabase.channel('public-db-changes', {
+      const channel = supabase.channel(channelName, {
         config: {
           broadcast: { self: false }
         }
       })
         .on('broadcast', { event: 'state_update' }, (payload) => {
           if (payload && payload.payload) {
+            console.log('[Supabase Realtime] Broadcast state_update recibido');
             onUpdate(payload.payload as CloudTournamentState);
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public' }, async (payload: any) => {
-          // Si el cambio fue en tournament_sync y viene el dato completo, aplicar inmediatamente
-          if (payload && payload.table === 'tournament_sync' && payload.new && payload.new.data) {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_sync' }, async (payload: any) => {
+          console.log('[Supabase Realtime] Cambio detectado en tournament_sync:', payload?.eventType);
+          if (payload && payload.new && payload.new.data) {
             onUpdate(payload.new.data as CloudTournamentState);
           } else {
-            // Ante cualquier otro cambio de tabla (partidos, equipos, jugadores, posiciones), refrescar estado
             const fresh = await fetchStateFromCloud(cfg);
             if (fresh) onUpdate(fresh);
           }
         })
-        .subscribe((status) => {
-          console.log('[Supabase Realtime public-db-changes] Status:', status);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'partidos' }, async () => {
+          console.log('[Supabase Realtime] Cambio detectado en tabla partidos');
+          const fresh = await fetchStateFromCloud(cfg);
+          if (fresh) onUpdate(fresh);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, async () => {
+          console.log('[Supabase Realtime] Cambio detectado en tabla equipos');
+          const fresh = await fetchStateFromCloud(cfg);
+          if (fresh) onUpdate(fresh);
+        })
+        .subscribe((status, err) => {
+          console.log(`[Supabase Realtime Channel: ${channelName}] Status:`, status, err || '');
         });
 
       activeRealtimeChannel = channel;
@@ -180,21 +190,6 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
         event: 'state_update',
         payload: state
       });
-    } else {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const channelName = `live_tourney_${cfg.channelId || 'deportlambert_live'}`;
-        const channel = supabase.channel(channelName, { config: { broadcast: { self: false } } });
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.send({
-              type: 'broadcast',
-              event: 'state_update',
-              payload: state
-            });
-          }
-        });
-      }
     }
   } catch (e) {}
 
@@ -228,7 +223,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
 }
 
 /**
- * Fetch latest tournament state from the cloud database (Supabase)
+ * Fetch latest tournament state from the cloud database (Supabase) con bypass de caché
  */
 export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTournamentState | null> {
   const cfg = config || getSyncConfig();
@@ -241,10 +236,10 @@ export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTou
       return spData as CloudTournamentState;
     }
 
-    // 2. Direct Supabase REST query
+    // 2. Direct Supabase REST query con timestamp para forzar refresco
     if (cfg.supabaseUrl && cfg.supabaseKey) {
       try {
-        const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync?id=eq.${cfg.channelId || 'deportlambert_live'}&select=*`;
+        const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/tournament_sync?id=eq.${cfg.channelId || 'deportlambert_live'}&select=*&_t=${Date.now()}`;
         const res = await fetch(url, {
           headers: {
             'apikey': cfg.supabaseKey,

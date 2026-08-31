@@ -349,7 +349,7 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig]);
 
-  // Aplicar actualización remota de forma segura sin re-empujar datos
+  // Aplicar actualización remota de forma segura forzando nuevo objeto de estado
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
     if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
     
@@ -361,11 +361,11 @@ export default function SportsManager() {
 
     // Si los datos en la nube son diferentes o la versión es mayor, actualizar inmediatamente
     if (remoteStr !== localStr || (remote.version && remote.version > localVersionRef.current)) {
-      disciplineDataRef.current = remote.disciplineData;
-      setDisciplineData(remote.disciplineData);
-      if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-      if (remote.branding) setBranding(remote.branding);
-      if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+      disciplineDataRef.current = { ...remote.disciplineData };
+      setDisciplineData({ ...remote.disciplineData });
+      if (remote.disciplinesList) setDisciplinesList([...remote.disciplinesList]);
+      if (remote.branding) setBranding({ ...remote.branding });
+      if (remote.registeredAdmins) setRegisteredAdmins([...remote.registeredAdmins]);
       localVersionRef.current = Math.max(remote.version || 1, localVersionRef.current);
       localUpdatedAtRef.current = remote.updatedAt || Date.now();
       setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
@@ -379,10 +379,44 @@ export default function SportsManager() {
     const unsub = subscribeToRealtimeUpdates((remote) => {
       applyRemoteUpdate(remote);
     });
-    return unsub;
-  }, [applyRemoteUpdate]);
 
-  // Polling de respaldo cada 2s para sincronizar marcadores y equipos inmediatamente
+    // Refresco instantáneo al cambiar de pestaña o reactivar teléfono
+    const handleFocusOrVisible = async () => {
+      if (document.visibilityState === 'visible' && !isLocallyMutatingRef.current) {
+        try {
+          const fresh = await fetchStateFromCloud(syncConfig);
+          if (fresh) applyRemoteUpdate(fresh);
+        } catch (e) {}
+      }
+    };
+
+    // Escuchar activación de nuevo Service Worker para forzar actualización
+    const handleSWMessage = async (e: MessageEvent) => {
+      if (e.data && e.data.type === 'SW_ACTIVATED') {
+        try {
+          const fresh = await fetchStateFromCloud(syncConfig);
+          if (fresh) applyRemoteUpdate(fresh);
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    }
+
+    return () => {
+      unsub();
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
+    };
+  }, [applyRemoteUpdate, syncConfig]);
+
+  // Polling de respaldo cada 1.5s para sincronizar marcadores y equipos sin interrupciones
   useEffect(() => {
     const timer = setInterval(async () => {
       if (!syncConfig.enabled || isLocallyMutatingRef.current) return;
@@ -392,7 +426,7 @@ export default function SportsManager() {
           applyRemoteUpdate(remote);
         }
       } catch (e) {}
-    }, 2000);
+    }, 1500);
 
     return () => clearInterval(timer);
   }, [syncConfig, applyRemoteUpdate]);
