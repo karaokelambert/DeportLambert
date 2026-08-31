@@ -1610,8 +1610,21 @@ function DashboardView({
 
         <div className="space-y-3.5">
           {games.map(g => {
-            const homeTeamObj = teams.find(t => t.name.toLowerCase() === g.homeTeam.toLowerCase());
-            const awayTeamObj = teams.find(t => t.name.toLowerCase() === g.awayTeam.toLowerCase());
+            const findTeam = (nameOrId?: string) => {
+              if (!nameOrId) return undefined;
+              const clean = nameOrId.trim().toLowerCase();
+              return teams.find(t => 
+                (t.id && String(t.id).toLowerCase() === clean) ||
+                (t.name && t.name.trim().toLowerCase() === clean) ||
+                (t.name && t.name.trim().toLowerCase().includes(clean)) ||
+                (clean.includes(t.name?.trim().toLowerCase() || '---'))
+              );
+            };
+
+            const homeTeamObj = findTeam((g as any).homeTeamId || (g as any).home_team_id || g.homeTeam);
+            const awayTeamObj = findTeam((g as any).awayTeamId || (g as any).away_team_id || g.awayTeam);
+            const homeLogo = (g as any).homeTeamLogo || (g as any).home_logo || (g as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+            const awayLogo = (g as any).awayTeamLogo || (g as any).away_logo || (g as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
 
             return (
               <div 
@@ -1623,7 +1636,7 @@ function DashboardView({
                   {/* 1. BLOQUE EQUIPO LOCAL (Vertical) */}
                   <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
                     <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
-                      <TeamLogo team={homeTeamObj} teamName={g.homeTeam} size="custom" className="w-full h-full" />
+                      <TeamLogo team={homeTeamObj} teamName={g.homeTeam} logoUrl={homeLogo} size="custom" className="w-full h-full" />
                     </div>
                     <p className="font-black uppercase text-xs sm:text-base text-white tracking-wide leading-tight text-center break-words w-full px-0.5">
                       {g.homeTeam}
@@ -1668,7 +1681,7 @@ function DashboardView({
                   {/* 3. BLOQUE EQUIPO VISITANTE (Vertical) */}
                   <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px] relative">
                     <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0 group-hover:scale-105 transition-all duration-300">
-                      <TeamLogo team={awayTeamObj} teamName={g.awayTeam} size="custom" className="w-full h-full" />
+                      <TeamLogo team={awayTeamObj} teamName={g.awayTeam} logoUrl={awayLogo} size="custom" className="w-full h-full" />
                     </div>
                     <p className="font-black uppercase text-xs sm:text-base text-white tracking-wide leading-tight text-center break-words w-full px-0.5">
                       {g.awayTeam}
@@ -3181,8 +3194,21 @@ function CalendarView({
       <div className="space-y-3.5">
         {filteredGames.length > 0 ? (
           filteredGames.map(game => {
-            const homeLogo = getTeamLogo(game.homeTeam);
-            const awayLogo = getTeamLogo(game.awayTeam);
+            const findTeam = (nameOrId?: string) => {
+              if (!nameOrId) return undefined;
+              const clean = nameOrId.trim().toLowerCase();
+              return teams.find(t => 
+                (t.id && String(t.id).toLowerCase() === clean) ||
+                (t.name && t.name.trim().toLowerCase() === clean) ||
+                (t.name && t.name.trim().toLowerCase().includes(clean)) ||
+                (clean.includes(t.name?.trim().toLowerCase() || '---'))
+              );
+            };
+
+            const homeTeamObj = findTeam((game as any).homeTeamId || (game as any).home_team_id || game.homeTeam);
+            const awayTeamObj = findTeam((game as any).awayTeamId || (game as any).away_team_id || game.awayTeam);
+            const homeLogo = (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+            const awayLogo = (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
 
             return (
               <div 
@@ -3251,7 +3277,7 @@ function CalendarView({
                   {/* Local */}
                   <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
                     <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-amber-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
-                      <TeamLogo team={teams.find(t => t.name.toLowerCase() === game.homeTeam.toLowerCase())} teamName={game.homeTeam} size="custom" className="w-full h-full" />
+                      <TeamLogo team={homeTeamObj} teamName={game.homeTeam} logoUrl={homeLogo} size="custom" className="w-full h-full" />
                     </div>
                     <span className="font-black uppercase text-xs sm:text-base text-white block leading-tight text-center break-words w-full px-0.5">
                       {game.homeTeam}
@@ -3279,7 +3305,7 @@ function CalendarView({
                   {/* Visitante */}
                   <div className="flex flex-col items-center text-center space-y-1.5 sm:space-y-2 flex-1 min-w-0 max-w-full md:max-w-[180px]">
                     <div className="w-14 h-14 sm:w-20 sm:h-20 max-w-[80px] max-h-[80px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0a1120] to-slate-950 p-1 sm:p-1.5 border-2 border-purple-400/80 shadow-[inset_0_2px_4px_rgba(255,255,255,0.3),0_10px_25px_rgba(0,0,0,0.8)] flex items-center justify-center overflow-hidden shrink-0">
-                      <TeamLogo team={teams.find(t => t.name.toLowerCase() === game.awayTeam.toLowerCase())} teamName={game.awayTeam} size="custom" className="w-full h-full" />
+                      <TeamLogo team={awayTeamObj} teamName={game.awayTeam} logoUrl={awayLogo} size="custom" className="w-full h-full" />
                     </div>
                     <span className="font-black uppercase text-xs sm:text-base text-white block leading-tight text-center break-words w-full px-0.5">
                       {game.awayTeam}
@@ -3610,28 +3636,62 @@ function CompactMatchCard({
       <div className="grid grid-cols-2 gap-3 items-center text-center bg-gradient-to-r from-slate-900 via-[#0F172A] to-slate-900 p-3 sm:p-4 rounded-2xl border-2 border-amber-500/70 shadow-lg">
         
         {/* Equipo Local */}
-        <div className="flex flex-col items-center space-y-1.5 min-w-0">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
-            <TeamLogo team={teams.find(t => t.name.toLowerCase() === game.homeTeam.toLowerCase())} teamName={game.homeTeam} size="custom" className="w-full h-full" />
-          </div>
-          <span className="text-xs sm:text-sm font-black text-white uppercase truncate max-w-full px-1">{game.homeTeam}</span>
-          <span className="text-[9px] font-black text-amber-400 bg-amber-950/80 border border-amber-500/50 px-2 py-0.5 rounded uppercase">LOCAL</span>
-          <p className="text-2xl sm:text-3xl font-black text-[#00E676] font-mono drop-shadow-[0_2px_8px_rgba(0,230,118,0.4)]">
-            {totalHome}
-          </p>
-        </div>
+        {(() => {
+          const findTeam = (nameOrId?: string) => {
+            if (!nameOrId) return undefined;
+            const clean = nameOrId.trim().toLowerCase();
+            return teams.find(t => 
+              (t.id && String(t.id).toLowerCase() === clean) ||
+              (t.name && t.name.trim().toLowerCase() === clean) ||
+              (t.name && t.name.trim().toLowerCase().includes(clean)) ||
+              (clean.includes(t.name?.trim().toLowerCase() || '---'))
+            );
+          };
+          const homeTeamObj = findTeam((game as any).homeTeamId || (game as any).home_team_id || game.homeTeam);
+          const homeLogo = (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+
+          return (
+            <div className="flex flex-col items-center space-y-1.5 min-w-0">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-amber-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
+                <TeamLogo team={homeTeamObj} teamName={game.homeTeam} logoUrl={homeLogo} size="custom" className="w-full h-full" />
+              </div>
+              <span className="text-xs sm:text-sm font-black text-white uppercase truncate max-w-full px-1">{game.homeTeam}</span>
+              <span className="text-[9px] font-black text-amber-400 bg-amber-950/80 border border-amber-500/50 px-2 py-0.5 rounded uppercase">LOCAL</span>
+              <p className="text-2xl sm:text-3xl font-black text-[#00E676] font-mono drop-shadow-[0_2px_8px_rgba(0,230,118,0.4)]">
+                {totalHome}
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Equipo Visitante */}
-        <div className="flex flex-col items-center space-y-1.5 min-w-0 border-l border-slate-800 pl-2">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-purple-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
-            <TeamLogo team={teams.find(t => t.name.toLowerCase() === game.awayTeam.toLowerCase())} teamName={game.awayTeam} size="custom" className="w-full h-full" />
-          </div>
-          <span className="text-xs sm:text-sm font-black text-white uppercase truncate max-w-full px-1">{game.awayTeam}</span>
-          <span className="text-[9px] font-black text-purple-300 bg-purple-950/80 border border-purple-500/50 px-2 py-0.5 rounded uppercase">VISITANTE</span>
-          <p className="text-2xl sm:text-3xl font-black text-[#FF3D00] font-mono drop-shadow-[0_2px_8px_rgba(255,61,0,0.4)]">
-            {totalAway}
-          </p>
-        </div>
+        {(() => {
+          const findTeam = (nameOrId?: string) => {
+            if (!nameOrId) return undefined;
+            const clean = nameOrId.trim().toLowerCase();
+            return teams.find(t => 
+              (t.id && String(t.id).toLowerCase() === clean) ||
+              (t.name && t.name.trim().toLowerCase() === clean) ||
+              (t.name && t.name.trim().toLowerCase().includes(clean)) ||
+              (clean.includes(t.name?.trim().toLowerCase() || '---'))
+            );
+          };
+          const awayTeamObj = findTeam((game as any).awayTeamId || (game as any).away_team_id || game.awayTeam);
+          const awayLogo = (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
+
+          return (
+            <div className="flex flex-col items-center space-y-1.5 min-w-0 border-l border-slate-800 pl-2">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 max-w-[64px] max-h-[64px] rounded-2xl bg-gradient-to-b from-slate-800 via-[#0b1222] to-slate-950 p-2 border-2 border-purple-500/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_8px_20px_rgba(0,0,0,0.7)] flex items-center justify-center overflow-hidden shrink-0">
+                <TeamLogo team={awayTeamObj} teamName={game.awayTeam} logoUrl={awayLogo} size="custom" className="w-full h-full" />
+              </div>
+              <span className="text-xs sm:text-sm font-black text-white uppercase truncate max-w-full px-1">{game.awayTeam}</span>
+              <span className="text-[9px] font-black text-purple-300 bg-purple-950/80 border border-purple-500/50 px-2 py-0.5 rounded uppercase">VISITANTE</span>
+              <p className="text-2xl sm:text-3xl font-black text-[#FF3D00] font-mono drop-shadow-[0_2px_8px_rgba(255,61,0,0.4)]">
+                {totalAway}
+              </p>
+            </div>
+          );
+        })()}
 
       </div>
 
