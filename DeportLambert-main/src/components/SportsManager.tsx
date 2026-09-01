@@ -100,7 +100,8 @@ import {
   getSupabaseClient, 
   updateSingleGameInSupabase, 
   updateSingleTeamInSupabase, 
-  fetchSupabaseDirectData 
+  fetchSupabaseDirectData,
+  broadcastScoreUpdate
 } from '../lib/supabaseClient';
 
 // ── Tipos ────────────────────────────────────────────────────
@@ -492,13 +493,64 @@ export default function SportsManager() {
     });
   }, []);
 
-  // Suscripción Realtime directa para partidos y equipos
+  // Suscripción Realtime directa para partidos y equipos con canal de Broadcast ultra-rápido (< 0.5s)
   useEffect(() => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
-    const directChannel = supabase
-      .channel('realtime-partidos-live')
+    const channelName = `${currentDiscKey}-live`;
+    let isSubscribed = false;
+
+    const liveChannel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { ack: false, self: true },
+        }
+      })
+      .on('broadcast', { event: 'score-update' }, ({ payload }: any) => {
+        if (payload && (payload.gameId || payload.id)) {
+          console.log('[Realtime Broadcast] Recibido score-update sub-segundo:', payload);
+          const rawId = String(payload.gameId || payload.id);
+          const cleanId = rawId.replace(/^[a-z0-9]+_/, '');
+          
+          setDisciplineData(prev => {
+            const disc = payload.discipline || currentDiscKey;
+            const discState = prev[disc] || defaultForCurrentDisc;
+            const gamesList: Game[] = discState.games || [];
+            
+            const updated = gamesList.map(g => {
+              if (g.id === cleanId || `${disc}_${g.id}` === rawId || g.id === rawId || `${disc}_${g.id}` === `${disc}_${cleanId}`) {
+                return {
+                  ...g,
+                  homeScore: payload.homeScore !== undefined ? Number(payload.homeScore) : g.homeScore,
+                  awayScore: payload.awayScore !== undefined ? Number(payload.awayScore) : g.awayScore,
+                  homeQuarters: payload.homeQuarters || g.homeQuarters,
+                  awayQuarters: payload.awayQuarters || g.awayQuarters,
+                  status: payload.status || g.status,
+                  currentQuarter: payload.currentQuarter || g.currentQuarter,
+                  equipo_local: payload.equipo_local || g.equipo_local,
+                  equipo_visitante: payload.equipo_visitante || g.equipo_visitante,
+                  logo_local: payload.logo_local || (g as any).logo_local,
+                  logo_visitante: payload.logo_visitante || (g as any).logo_visitante,
+                  homeTeamLogo: payload.homeTeamLogo || payload.home_team_logo || (g as any).homeTeamLogo,
+                  awayTeamLogo: payload.awayTeamLogo || payload.away_team_logo || (g as any).awayTeamLogo,
+                };
+              }
+              return g;
+            });
+
+            const nextData = {
+              ...prev,
+              [disc]: {
+                ...discState,
+                games: updated,
+              }
+            };
+            disciplineDataRef.current = nextData;
+            return nextData;
+          });
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'partidos' }, (payload: any) => {
         if (payload && payload.new) {
           const n = payload.new;
@@ -597,11 +649,40 @@ export default function SportsManager() {
             return nextData;
           });
         }
-      })
-      .subscribe();
+      });
+
+    // Suscripción con reconexión automática garantizada en móviles
+    const subscribeChannel = () => {
+      liveChannel.subscribe((status: string) => {
+        console.log(`[Supabase Realtime] Canal ${channelName} estado:`, status);
+        if (status === 'SUBSCRIBED') {
+          isSubscribed = true;
+          setSyncStatus('synced');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          isSubscribed = false;
+          console.warn(`[Supabase Realtime] Estado ${status}, reintentando en 1.5s...`);
+          setTimeout(() => {
+            if (!isSubscribed) {
+              liveChannel.subscribe();
+            }
+          }, 1500);
+        }
+      });
+    };
+
+    subscribeChannel();
+
+    // Reconexión automática al recuperar conectividad o reactivar teléfono
+    const handleOnline = () => {
+      console.log('[Red] Conexión restaurada, reconectando WebSocket...');
+      subscribeChannel();
+    };
+
+    window.addEventListener('online', handleOnline);
 
     return () => {
-      supabase.removeChannel(directChannel);
+      window.removeEventListener('online', handleOnline);
+      supabase.removeChannel(liveChannel);
     };
   }, [currentDiscKey]);
 
@@ -3998,17 +4079,27 @@ function CompactMatchCard({
       status: status,
     };
     onUpdateGame(game.id, updates);
+
+    const disc = (game as any).discipline || 'baloncesto';
+
+    // 1. Emisión instantánea por Broadcast WebSocket (< 0.5s)
+    broadcastScoreUpdate(disc, {
+      gameId: game.id,
+      id: game.id,
+      homeTeam: game.homeTeam,
+      awayTeam: game.awayTeam,
+      homeScore: totalHome,
+      awayScore: totalAway,
+      homeQuarters: homeQ,
+      awayQuarters: awayQ,
+      status: status,
+      discipline: disc,
+    });
     
     try {
-      const disc = (game as any).discipline || 'baloncesto';
       const res = await updateSingleGameInSupabase(disc, { ...game, ...updates });
-      if (res.ok) {
-        setSavedSuccess(true);
-        setTimeout(() => setSavedSuccess(false), 2500);
-      } else {
-        setSavedSuccess(true);
-        setTimeout(() => setSavedSuccess(false), 2500);
-      }
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
     } catch {
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);

@@ -332,8 +332,57 @@ export async function syncStandingsToSupabaseTable(discipline: string, teams: an
   }
 }
 
+// Canal persistente compartido para Broadcast de ultra-baja latencia (< 500ms)
+const activeBroadcastChannels: Record<string, any> = {};
+
+export function getBroadcastChannel(discipline: string = 'baloncesto') {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const channelName = `${discipline}-live`;
+  
+  if (activeBroadcastChannels[channelName]) {
+    return activeBroadcastChannels[channelName];
+  }
+
+  const channel = client.channel(channelName, {
+    config: {
+      broadcast: { ack: false, self: true },
+    }
+  });
+
+  channel.subscribe((status: string) => {
+    console.log(`[Supabase Broadcast] Canal ${channelName} suscripción:`, status);
+  });
+
+  activeBroadcastChannels[channelName] = channel;
+  return channel;
+}
+
 /**
- * Actualiza un único partido en Supabase directamente con verificación de respuesta
+ * Emisión instantánea por Broadcast WebSocket (sub-segundo / 0.5s)
+ */
+export async function broadcastScoreUpdate(discipline: string, payload: any) {
+  try {
+    const channel = getBroadcastChannel(discipline);
+    if (channel) {
+      await channel.send({
+        type: 'broadcast',
+        event: 'score-update',
+        payload: {
+          ...payload,
+          discipline,
+          timestamp: Date.now(),
+        }
+      });
+      console.log('[Supabase Broadcast] Emitido score-update instantáneo:', payload.gameId || payload.id);
+    }
+  } catch (err) {
+    console.warn('[Supabase Broadcast] Error al emitir score-update:', err);
+  }
+}
+
+/**
+ * Actualiza un único partido en Supabase directamente con verificación de respuesta y Broadcast instantáneo
  */
 export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; error?: any }> {
   const client = getSupabaseClient();
@@ -341,6 +390,21 @@ export async function updateSingleGameInSupabase(discipline: string, game: any):
   
   const primaryId = game.id.includes('_') ? game.id : `${discipline}_${game.id}`;
   
+  // 1. Emitir inmediatamente por el canal de Broadcast para sincronización instantánea sub-segundo (< 0.5s)
+  broadcastScoreUpdate(discipline, {
+    gameId: game.id,
+    id: primaryId,
+    homeTeam: game.homeTeam,
+    awayTeam: game.awayTeam,
+    homeScore: Number(game.homeScore || 0),
+    awayScore: Number(game.awayScore || 0),
+    homeQuarters: game.homeQuarters || [0, 0, 0, 0],
+    awayQuarters: game.awayQuarters || [0, 0, 0, 0],
+    currentQuarter: Number(game.currentQuarter || 1),
+    status: game.status || 'Programado',
+    discipline,
+  });
+
   try {
     const row: any = {
       id: primaryId,

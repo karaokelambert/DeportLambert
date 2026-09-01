@@ -56,26 +56,36 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// ── 3. FETCH: NetworkFirst para HTML/Vistas + Bypass Supabase/API ────
+// ── 3. FETCH: Bypass Supabase/Realtime Directo + NetworkFirst para HTML/Vistas ────
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = req.url;
 
+  // EXCLUSIÓN EXPLÍCITA DE SUPABASE, WEBSOCKETS Y APIs (Siempre a la red en vivo, sin caché)
+  try {
+    const urlObj = new URL(url);
+    if (
+      urlObj.origin.includes('supabase.co') ||
+      urlObj.origin.includes('supabase.in') ||
+      urlObj.hostname.includes('supabase') ||
+      url.includes('/rest/v1/') ||
+      url.includes('/realtime/') ||
+      url.includes('/api/') ||
+      url.startsWith('ws:') ||
+      url.startsWith('wss:')
+    ) {
+      event.respondWith(fetch(event.request));
+      return;
+    }
+  } catch (e) {
+    if (url.includes('supabase.co') || url.includes('/realtime/')) {
+      event.respondWith(fetch(event.request));
+      return;
+    }
+  }
+
   // Solo interceptar peticiones GET
   if (req.method !== 'GET') return;
-
-  // BYPASS COMPLETO para Supabase, WebSockets y rutas API (Nunca almacenar en caché)
-  if (
-    url.includes('supabase.co') ||
-    url.includes('supabase.in') ||
-    url.includes('/rest/v1/') ||
-    url.includes('/realtime/') ||
-    url.includes('/api/') ||
-    url.startsWith('ws:') ||
-    url.startsWith('wss:')
-  ) {
-    return; // Dejar pasar directo a la red sin interceptar
-  }
 
   // ESTRATEGIA 1: NetworkFirst para Navegación / HTML (Siempre obtener la versión viva)
   if (req.mode === 'navigate' || (req.headers.get('accept') && req.headers.get('accept').includes('text/html'))) {
