@@ -95,7 +95,7 @@ import {
   SyncConfig, 
   CloudTournamentState 
 } from '../lib/cloudSync';
-import TeamLogo, { getTeamLogoUrl } from './TeamLogo';
+import TeamLogo, { getTeamLogoUrl, compressImageFileToDataUri } from './TeamLogo';
 
 // ── Tipos ────────────────────────────────────────────────────
 export type Role = 'ADMIN' | 'DELEGADO' | 'VISITANTE';
@@ -1823,8 +1823,10 @@ function TeamsView({
   const [managingPlayersTeam, setManagingPlayersTeam] = useState<Team | null>(null);
   const [isAddingTeam, setIsAddingTeam] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [newTeam, setNewTeam] = useState({ name: '', delegado: '', telefono: '', group: groups[0] || 'Grupo A', delegatePin: '1234' });
+  const [newTeam, setNewTeam] = useState<{ name: string; delegado: string; telefono: string; group: string; delegatePin: string; logoUrl?: string }>({ name: '', delegado: '', telefono: '', group: groups[0] || 'Grupo A', delegatePin: '1234', logoUrl: '' });
+  const [isAddingProcessing, setIsAddingProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveTeam = () => {
     if (editingTeam) { 
@@ -1853,7 +1855,7 @@ function TeamsView({
   const handleCreateTeam = () => {
     if (newTeam.name.trim() && newTeam.delegado.trim()) {
       onAddTeam({ ...newTeam, jugadores: [] });
-      setNewTeam({ name: '', delegado: '', telefono: '', group: groups[0] || 'Grupo A', delegatePin: '1234' });
+      setNewTeam({ name: '', delegado: '', telefono: '', group: groups[0] || 'Grupo A', delegatePin: '1234', logoUrl: '' });
       setIsAddingTeam(false);
     }
   };
@@ -2113,6 +2115,51 @@ function TeamsView({
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-black text-amber-400 outline-none focus:ring-2 focus:ring-orange-500 tracking-wider"
               />
               <p className="text-[9px] text-slate-500 font-bold mt-1">Clave de acceso que usará el delegado para gestionar su plantilla.</p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Logo Oficial del Equipo</label>
+              <div 
+                onClick={() => addFileInputRef.current?.click()} 
+                className="border-2 border-dashed border-slate-700 hover:border-amber-400 rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center gap-2 transition-colors bg-slate-950/60"
+              >
+                <input 
+                  type="file" 
+                  ref={addFileInputRef} 
+                  className="hidden" 
+                  accept="image/*" 
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setIsAddingProcessing(true);
+                      try {
+                        const compressedDataUri = await compressImageFileToDataUri(file, 256, 0.85);
+                        setNewTeam(p => ({ ...p, logoUrl: compressedDataUri }));
+                      } catch (err) {
+                        console.warn('Error al procesar logo:', err);
+                      } finally {
+                        setIsAddingProcessing(false);
+                      }
+                    }
+                  }} 
+                />
+                {isAddingProcessing ? (
+                  <div className="flex items-center gap-2 text-amber-400 py-2">
+                    <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-bold uppercase">Optimizando imagen...</span>
+                  </div>
+                ) : newTeam.logoUrl ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <img src={newTeam.logoUrl} alt="Preview" className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" />
+                    <span className="text-[10px] text-amber-400 font-bold uppercase hover:underline">Cambiar imagen</span>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5 text-slate-400" />
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Hacer clic para subir logo oficial</p>
+                    <p className="text-[9px] text-slate-500 font-medium">Se comprime y sincroniza automáticamente con la nube</p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex gap-3 mt-6">
@@ -4062,10 +4109,20 @@ function EditTeamDialog({
   onClose: () => void,
   fileInputRef: React.RefObject<HTMLInputElement>,
 }) {
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onChange(p => p ? { ...p, logoUrl: URL.createObjectURL(file) } : null);
+      setIsProcessing(true);
+      try {
+        const compressedDataUri = await compressImageFileToDataUri(file, 256, 0.85);
+        onChange(p => p ? { ...p, logoUrl: compressedDataUri } : null);
+      } catch (err) {
+        console.warn('Error al procesar logo del equipo:', err);
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -4121,18 +4178,27 @@ function EditTeamDialog({
           <p className="text-[9px] text-slate-500 font-bold mt-1">Clave de acceso exclusiva para que el delegado ingrese a este equipo.</p>
         </div>
         <div>
-          <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Logo</label>
+          <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Logo Oficial del Equipo</label>
           <div 
             onClick={() => fileInputRef.current?.click()} 
-            className="border-2 border-dashed border-slate-700 rounded-xl p-4 cursor-pointer hover:border-orange-500 flex flex-col items-center justify-center gap-2 transition-colors bg-slate-950/60"
+            className="border-2 border-dashed border-slate-700 hover:border-amber-400 rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center gap-2 transition-colors bg-slate-950/60"
           >
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-            {team.logoUrl ? (
-              <img src={team.logoUrl} alt="Preview" className="w-14 h-14 object-contain" />
+            {isProcessing ? (
+              <div className="flex items-center gap-2 text-amber-400 py-2">
+                <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold uppercase">Optimizando imagen...</span>
+              </div>
+            ) : team.logoUrl ? (
+              <div className="flex flex-col items-center gap-2">
+                <img src={team.logoUrl} alt="Preview" className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" />
+                <span className="text-[10px] text-amber-400 font-bold uppercase hover:underline">Cambiar imagen</span>
+              </div>
             ) : (
               <>
                 <Upload className="w-5 h-5 text-slate-400" />
-                <p className="text-[10px] uppercase font-bold text-slate-400">Hacer clic para subir logo</p>
+                <p className="text-[10px] uppercase font-bold text-slate-400">Hacer clic para subir logo oficial</p>
+                <p className="text-[9px] text-slate-500 font-medium">Se comprime y sincroniza automáticamente con la nube</p>
               </>
             )}
           </div>
