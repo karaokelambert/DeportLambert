@@ -121,6 +121,20 @@ export interface Game {
   location: string;
   phase: string;
   status: 'Programado' | 'En Curso' | 'Finalizado';
+  equipo_local?: any;
+  equipo_visitante?: any;
+  logo_local?: string;
+  logo_visitante?: string;
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
+  home_logo?: string;
+  away_logo?: string;
+  home_team_logo?: string;
+  away_team_logo?: string;
+  homeTeamId?: string;
+  awayTeamId?: string;
+  home_team_id?: string;
+  away_team_id?: string;
 }
 
 export interface Team {
