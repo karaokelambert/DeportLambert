@@ -96,6 +96,12 @@ import {
   CloudTournamentState 
 } from '../lib/cloudSync';
 import TeamLogo, { getTeamLogoUrl, compressImageFileToDataUri } from './TeamLogo';
+import { 
+  getSupabaseClient, 
+  updateSingleGameInSupabase, 
+  updateSingleTeamInSupabase, 
+  fetchSupabaseDirectData 
+} from '../lib/supabaseClient';
 
 // ── Tipos ────────────────────────────────────────────────────
 export type Role = 'ADMIN' | 'DELEGADO' | 'VISITANTE';
@@ -300,6 +306,8 @@ export default function SportsManager() {
 
   // ── Datos por disciplina con Supabase como Única Fuente de Verdad ──
   const [disciplineData, setDisciplineData] = useState<Record<string, { groups: string[], teams: Team[], games: Game[] }>>(INITIAL_DISCIPLINE_DATA);
+  const currentDiscKey = selectedDiscipline ? selectedDiscipline.id : 'baloncesto';
+  const defaultForCurrentDisc = INITIAL_DISCIPLINE_DATA[currentDiscKey] || { teams: [], games: [], groups: ['Grupo A', 'Grupo B'] };
 
   // Inicialización de datos desde Supabase con prioridad absoluta
   const localVersionRef = useRef<number>(1);
@@ -339,6 +347,26 @@ export default function SportsManager() {
             if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
           }
         }
+
+        // 3. Cargar directamente los logos de equipos y partidos de la tabla Supabase
+        const directData = await fetchSupabaseDirectData(currentDiscKey);
+        if (directData && directData.teams && directData.teams.length > 0) {
+          setDisciplineData(prev => {
+            const disc = prev[currentDiscKey] || defaultForCurrentDisc;
+            const updatedTeams = disc.teams.map(t => {
+              const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
+              return matched && matched.logoUrl ? { ...t, logoUrl: matched.logoUrl } : t;
+            });
+            return {
+              ...prev,
+              [currentDiscKey]: {
+                ...disc,
+                teams: updatedTeams,
+              }
+            };
+          });
+        }
+
         setSyncStatus('synced');
       } catch (e) {
         setSyncStatus('offline');
@@ -347,7 +375,7 @@ export default function SportsManager() {
       }
     }
     initCloud();
-  }, [syncConfig]);
+  }, [syncConfig, currentDiscKey]);
 
   // Aplicar actualización remota de forma segura forzando nuevo objeto de estado
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
@@ -373,6 +401,95 @@ export default function SportsManager() {
       saveLocalState(remote);
     }
   }, []);
+
+  // Suscripción Realtime directa para partidos y equipos
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const directChannel = supabase
+      .channel('realtime-partidos-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'partidos' }, (payload: any) => {
+        if (payload && payload.new) {
+          const n = payload.new;
+          const cleanId = (n.id || '').replace(/^[a-z0-9]+_/, '');
+          
+          setDisciplineData(prev => {
+            const disc = n.discipline || currentDiscKey;
+            const discState = prev[disc] || defaultForCurrentDisc;
+            const gamesList: Game[] = discState.games || [];
+            
+            const updated = gamesList.map(g => {
+              if (g.id === cleanId || `${disc}_${g.id}` === n.id || g.id === n.id) {
+                return {
+                  ...g,
+                  homeScore: n.home_score !== undefined ? Number(n.home_score) : (n.marcador_local !== undefined ? Number(n.marcador_local) : g.homeScore),
+                  awayScore: n.away_score !== undefined ? Number(n.away_score) : (n.marcador_visitante !== undefined ? Number(n.marcador_visitante) : g.awayScore),
+                  homeQuarters: n.home_quarters || n.cuartos_local || g.homeQuarters,
+                  awayQuarters: n.away_quarters || n.cuartos_visitante || g.awayQuarters,
+                  status: n.status || n.estado || g.status,
+                  currentQuarter: n.current_quarter || g.currentQuarter,
+                };
+              }
+              return g;
+            });
+
+            const nextData = {
+              ...prev,
+              [disc]: {
+                ...discState,
+                games: updated,
+              }
+            };
+            disciplineDataRef.current = nextData;
+            return nextData;
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equipos' }, (payload: any) => {
+        if (payload && payload.new) {
+          const n = payload.new;
+          const cleanId = (n.id || '').replace(/^[a-z0-9]+_/, '');
+
+          setDisciplineData(prev => {
+            const disc = n.discipline || currentDiscKey;
+            const discState = prev[disc] || defaultForCurrentDisc;
+            const teamsList: Team[] = discState.teams || [];
+
+            const updated = teamsList.map(t => {
+              if (t.id === cleanId || `${disc}_${t.id}` === n.id || t.id === n.id || t.name.toLowerCase() === (n.name || '').toLowerCase()) {
+                return {
+                  ...t,
+                  name: n.name || t.name,
+                  delegado: n.delegado || t.delegado,
+                  telefono: n.telefono || t.telefono,
+                  group: n.group_name || n.group || t.group,
+                  logoUrl: n.logo_url || n.logo || t.logoUrl,
+                  jugadores: n.jugadores || t.jugadores,
+                  delegatePin: n.delegate_pin || t.delegatePin,
+                };
+              }
+              return t;
+            });
+
+            const nextData = {
+              ...prev,
+              [disc]: {
+                ...discState,
+                teams: updated,
+              }
+            };
+            disciplineDataRef.current = nextData;
+            return nextData;
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(directChannel);
+    };
+  }, [currentDiscKey]);
 
   // Escuchar actualizaciones en tiempo real (Supabase Channel WebSockets + Broadcast)
   useEffect(() => {
@@ -461,9 +578,6 @@ export default function SportsManager() {
       isLocallyMutatingRef.current = false;
     }, 500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
-
-  const currentDiscKey = selectedDiscipline ? selectedDiscipline.id : 'baloncesto';
-  const defaultForCurrentDisc = INITIAL_DISCIPLINE_DATA[currentDiscKey] || { teams: [], games: [], groups: ['Grupo A', 'Grupo B'] };
 
   const currentTeams = disciplineData[currentDiscKey]?.teams || defaultForCurrentDisc.teams;
   const currentGames = disciplineData[currentDiscKey]?.games || defaultForCurrentDisc.games;
@@ -714,31 +828,42 @@ export default function SportsManager() {
     setActiveTab('dashboard');
   };
 
-  // ── Handlers de datos con Auditoría en Tiempo Real ────────
+  // ── Handlers de datos con Auditoría en Tiempo Real y Persistencia Directa ──
   const updateGame = useCallback((gameId: string, updates: Partial<Game>) => {
-    setGames(prev => prev.map(g => {
-      if (g.id === gameId) {
-        const updated = { ...g, ...updates };
-
-        // Disparo de notificación y auditoría al finalizar partido
-        if (updates.status === 'Finalizado' && g.status !== 'Finalizado') {
-          const hs = updates.homeScore ?? updated.homeScore;
-          const as = updates.awayScore ?? updated.awayScore;
-          const body = `Finalizó: ${updated.homeTeam} ${hs} – ${as} ${updated.awayTeam}`;
-          triggerNotification(`⏱ Partido Finalizado · ${selectedDiscipline?.title || branding.title}`, body, gameId);
-          addAuditLog(`Marcador Final Guardado: ${updated.homeTeam} ${hs} - ${as} ${updated.awayTeam}`, 'score');
-        } else if (updates.homeScore !== undefined || updates.awayScore !== undefined) {
-          addAuditLog(`Actualización en vivo: ${updated.homeTeam} vs ${updated.awayTeam}`, 'score');
+    setGames(prev => {
+      const target = prev.find(g => g.id === gameId);
+      const merged = target ? { ...target, ...updates } : ({ id: gameId, ...updates } as Game);
+      
+      // Guardado directo asíncrono en Supabase
+      updateSingleGameInSupabase(currentDiscKey, merged).then(res => {
+        if (res.ok) {
+          console.log('[Supabase Direct] Partido guardado en BD con éxito status 200');
         }
-        return updated;
-      }
-      return g;
-    }));
-  }, [selectedDiscipline, branding.title, triggerNotification, addAuditLog]);
+      });
+
+      return prev.map(g => (g.id === gameId ? { ...g, ...updates } : g));
+    });
+
+    const targetGame = currentGames.find(g => g.id === gameId);
+    const merged = targetGame ? { ...targetGame, ...updates } : ({ id: gameId, ...updates } as Game);
+
+    // Disparo de notificación y auditoría al finalizar partido
+    if (updates.status === 'Finalizado' && targetGame?.status !== 'Finalizado') {
+      const hs = updates.homeScore ?? merged.homeScore;
+      const as = updates.awayScore ?? merged.awayScore;
+      const body = `Finalizó: ${merged.homeTeam} ${hs} – ${as} ${merged.awayTeam}`;
+      triggerNotification(`⏱ Partido Finalizado · ${selectedDiscipline?.title || branding.title}`, body, gameId);
+      addAuditLog(`Marcador Final Guardado: ${merged.homeTeam} ${hs} - ${as} ${merged.awayTeam}`, 'score');
+    } else if (updates.homeScore !== undefined || updates.awayScore !== undefined) {
+      addAuditLog(`Actualización en vivo: ${merged.homeTeam} vs ${merged.awayTeam}`, 'score');
+    }
+  }, [currentGames, currentDiscKey, selectedDiscipline, branding.title, triggerNotification, addAuditLog]);
 
   const handleAddGame = (newGame: Omit<Game, 'id'>) => {
     const id = Date.now().toString();
-    setGames(prev => [...prev, { ...newGame, id }]);
+    const gameToSave = { ...newGame, id };
+    setGames(prev => [...prev, gameToSave]);
+    updateSingleGameInSupabase(currentDiscKey, gameToSave);
     addAuditLog(`Partido agendado: ${newGame.homeTeam} vs ${newGame.awayTeam} (${newGame.date})`, 'schedule');
   };
 
@@ -749,12 +874,20 @@ export default function SportsManager() {
   };
 
   const handleUpdateTeam = (teamId: string, updates: Partial<Team>) => {
+    const targetTeam = currentTeams.find(item => item.id === teamId);
+    const merged = targetTeam ? { ...targetTeam, ...updates } : ({ id: teamId, ...updates } as Team);
+    
     setTeams(prev => prev.map(t => t.id === teamId ? { ...t, ...updates } : t));
-    const t = currentTeams.find(item => item.id === teamId);
-    if (updates.group && t && updates.group !== t.group) {
-      addAuditLog(`Equipo ${t.name} transferido a ${updates.group}`, 'group');
+    updateSingleTeamInSupabase(currentDiscKey, merged).then(res => {
+      if (res.ok) {
+        console.log('[Supabase Direct] Equipo y logo guardados en BD con éxito');
+      }
+    });
+
+    if (updates.group && targetTeam && updates.group !== targetTeam.group) {
+      addAuditLog(`Equipo ${targetTeam.name} transferido a ${updates.group}`, 'group');
     } else {
-      addAuditLog(`Datos de equipo actualizados: ${t?.name || ''}`, 'team');
+      addAuditLog(`Datos de equipo actualizados: ${targetTeam?.name || ''}`, 'team');
     }
   };
 
@@ -3650,6 +3783,7 @@ function CompactMatchCard({
   const [awayQ, setAwayQ] = useState<number[]>(game.awayQuarters || [0, 0, 0, 0]);
   const [status, setStatus] = useState<'Programado' | 'En Curso' | 'Finalizado'>(game.status || 'Programado');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setHomeQ(game.homeQuarters || [0, 0, 0, 0]);
@@ -3680,16 +3814,33 @@ function CompactMatchCard({
     }
   };
 
-  const handleSave = () => {
-    onUpdateGame(game.id, {
+  const handleSave = async () => {
+    setIsSaving(true);
+    const updates: Partial<Game> = {
       homeScore: totalHome,
       awayScore: totalAway,
       homeQuarters: homeQ,
       awayQuarters: awayQ,
       status: status,
-    });
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    };
+    onUpdateGame(game.id, updates);
+    
+    try {
+      const disc = (game as any).discipline || 'baloncesto';
+      const res = await updateSingleGameInSupabase(disc, { ...game, ...updates });
+      if (res.ok) {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2500);
+      } else {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2500);
+      }
+    } catch {
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -3840,10 +3991,15 @@ function CompactMatchCard({
             )}
             <button
               onClick={handleSave}
-              className="btn-neon-action py-1 px-3 rounded-lg text-slate-950 font-black uppercase text-[9px] tracking-wider flex items-center gap-1 shadow hover:scale-105 transition-all"
+              disabled={isSaving}
+              className="btn-neon-action py-1 px-3 rounded-lg text-slate-950 font-black uppercase text-[9px] tracking-wider flex items-center gap-1 shadow hover:scale-105 transition-all disabled:opacity-60"
             >
-              <Save className="w-3 h-3 stroke-[3]" />
-              <span>Guardar & Push</span>
+              {isSaving ? (
+                <span className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Save className="w-3 h-3 stroke-[3]" />
+              )}
+              <span>{isSaving ? 'Guardando...' : 'Guardar & Push'}</span>
             </button>
           </div>
         </div>

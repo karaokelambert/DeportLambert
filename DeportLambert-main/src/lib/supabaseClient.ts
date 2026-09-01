@@ -331,3 +331,151 @@ export async function syncStandingsToSupabaseTable(discipline: string, teams: an
     return false;
   }
 }
+
+/**
+ * Actualiza un único partido en Supabase directamente con verificación de respuesta
+ */
+export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; error?: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, error: 'No Supabase client' };
+  
+  const primaryId = game.id.includes('_') ? game.id : `${discipline}_${game.id}`;
+  
+  try {
+    const row: any = {
+      id: primaryId,
+      discipline,
+      home_team: game.homeTeam,
+      away_team: game.awayTeam,
+      home_score: Number(game.homeScore || 0),
+      away_score: Number(game.awayScore || 0),
+      home_quarters: game.homeQuarters || [0, 0, 0, 0],
+      away_quarters: game.awayQuarters || [0, 0, 0, 0],
+      current_quarter: Number(game.currentQuarter || 1),
+      date: game.date || '',
+      time: game.time || '',
+      location: game.location || '',
+      phase: game.phase || '',
+      status: game.status || 'Programado',
+      updated_at: new Date().toISOString()
+    };
+
+    const res = await client
+      .from('partidos')
+      .upsert(row, { onConflict: 'id' })
+      .select();
+
+    if (!res.error) {
+      console.log('[Supabase Direct] Partido actualizado exitosamente en BD:', primaryId);
+      return { ok: true, status: 200 };
+    }
+
+    // Fallback con nombres en español si la tabla fue creada con otro esquema
+    const altRow: any = {
+      id: primaryId,
+      discipline,
+      equipo_local: game.homeTeam,
+      equipo_visitante: game.awayTeam,
+      marcador_local: Number(game.homeScore || 0),
+      marcador_visitante: Number(game.awayScore || 0),
+      cuartos_local: game.homeQuarters || [0, 0, 0, 0],
+      cuartos_visitante: game.awayQuarters || [0, 0, 0, 0],
+      cuartos: [game.homeQuarters || [0, 0, 0, 0], game.awayQuarters || [0, 0, 0, 0]],
+      estado: game.status || 'Programado',
+      updated_at: new Date().toISOString()
+    };
+
+    const altRes = await client
+      .from('partidos')
+      .upsert(altRow, { onConflict: 'id' });
+
+    if (!altRes.error) {
+      return { ok: true, status: 200 };
+    }
+
+    return { ok: false, error: res.error || altRes.error };
+  } catch (e) {
+    return { ok: false, error: e };
+  }
+}
+
+/**
+ * Actualiza un único equipo en Supabase directamente con su logo_url
+ */
+export async function updateSingleTeamInSupabase(discipline: string, team: any): Promise<{ ok: boolean; error?: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, error: 'No Supabase client' };
+  
+  const primaryId = team.id.includes('_') ? team.id : `${discipline}_${team.id}`;
+  
+  try {
+    const row: any = {
+      id: primaryId,
+      discipline,
+      name: team.name,
+      delegado: team.delegado || '',
+      telefono: team.telefono || '',
+      group_name: team.group || 'Grupo A',
+      logo_url: team.logoUrl || team.logo_url || team.logo || '',
+      jugadores: team.jugadores || [],
+      delegate_pin: team.delegatePin || team.delegate_pin || '1234',
+      updated_at: new Date().toISOString()
+    };
+
+    const res = await client
+      .from('equipos')
+      .upsert(row, { onConflict: 'id' });
+
+    return { ok: !res.error, error: res.error };
+  } catch (e) {
+    return { ok: false, error: e };
+  }
+}
+
+/**
+ * Consulta directa de datos de tablas Supabase ('equipos' y 'partidos')
+ */
+export async function fetchSupabaseDirectData(disciplineId: string = 'baloncesto'): Promise<{ teams: any[]; games: any[] } | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const [teamsRes, gamesRes] = await Promise.all([
+      client.from('equipos').select('*').eq('discipline', disciplineId),
+      client.from('partidos').select('*').eq('discipline', disciplineId)
+    ]);
+
+    if (!teamsRes.error && teamsRes.data && teamsRes.data.length > 0) {
+      const teams = teamsRes.data.map(t => ({
+        id: t.id.replace(`${disciplineId}_`, ''),
+        name: t.name,
+        delegado: t.delegado || '',
+        telefono: t.telefono || '',
+        group: t.group_name || 'Grupo A',
+        logoUrl: t.logo_url || t.logo || '',
+        jugadores: t.jugadores || [],
+        delegatePin: t.delegate_pin || '1234',
+      }));
+
+      const games = (gamesRes.data || []).map(g => ({
+        id: g.id.replace(`${disciplineId}_`, ''),
+        homeTeam: g.home_team || g.equipo_local,
+        awayTeam: g.away_team || g.equipo_visitante,
+        homeScore: g.home_score !== undefined ? g.home_score : (g.marcador_local || 0),
+        awayScore: g.away_score !== undefined ? g.away_score : (g.marcador_visitante || 0),
+        homeQuarters: g.home_quarters || g.cuartos_local || [0, 0, 0, 0],
+        awayQuarters: g.away_quarters || g.cuartos_visitante || [0, 0, 0, 0],
+        currentQuarter: g.current_quarter || 1,
+        date: g.date || g.fecha || '',
+        time: g.time || g.hora || '',
+        location: g.location || g.lugar || '',
+        phase: g.phase || '',
+        status: g.status || g.estado || 'Programado',
+      }));
+
+      return { teams, games };
+    }
+  } catch (e) {
+    console.warn('[Supabase] Error en fetchSupabaseDirectData:', e);
+  }
+  return null;
+}
