@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { DisciplineData, DISCIPLINES } from './DisciplinesPortal';
 import { testSupabaseConnection } from '../lib/supabaseClient';
+import { resolveLogoUrl, compressImageFileToDataUri } from './TeamLogo';
 import { 
   BasketballIcon3D, 
   VolleyballIcon3D, 
@@ -158,16 +159,16 @@ export interface SuperAdminUser {
   disciplineName?: string;
 }
 
-// ── 3. Modal Configurar & SuperAdmin ──────────────────────────
-export function SettingsAppModal({ 
-  isOpen, 
+export function SettingsAppModal({
+  isOpen,
   onClose,
   branding,
   onSaveBranding,
-  disciplines = DISCIPLINES,
+  disciplines,
   onUpdateDisciplines,
   admins,
   onUpdateAdmins,
+  onSaveAllSettings,
 }: ModalProps & {
   branding?: { title: string, subtitle: string, season: string },
   onSaveBranding?: (b: { title: string, subtitle: string, season: string }) => void,
@@ -175,6 +176,11 @@ export function SettingsAppModal({
   onUpdateDisciplines?: (d: DisciplineData[]) => void,
   admins?: SuperAdminUser[],
   onUpdateAdmins?: (a: SuperAdminUser[]) => void,
+  onSaveAllSettings?: (settings: {
+    branding?: { title: string, subtitle: string, season: string },
+    disciplines?: DisciplineData[],
+    admins?: SuperAdminUser[]
+  }) => void,
 }) {
   // ── Modo General vs Modo SuperAdmin ─────────────────────────
   const [modalSection, setModalSection] = useState<'general' | 'superadmin'>('general');
@@ -198,7 +204,7 @@ export function SettingsAppModal({
   const [localSeason, setLocalSeason] = useState(branding?.season || 'TEMPORADA 2026');
 
   // ── Lista Local de Disciplinas ──────────────────────────────
-  const [localDisciplines, setLocalDisciplines] = useState<DisciplineData[]>(disciplines);
+  const [localDisciplines, setLocalDisciplines] = useState<DisciplineData[]>(disciplines || DISCIPLINES);
   const [editingDiscId, setEditingDiscId] = useState<string | null>(null);
 
   // Formulario de Nueva Disciplina
@@ -227,32 +233,42 @@ export function SettingsAppModal({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Sincronizar si cambian las props
+  // Solo sincronizar con props externas si el modal NO está abierto activamente (evita sobreescritura por polling)
   useEffect(() => {
-    if (disciplines) setLocalDisciplines(disciplines);
-  }, [disciplines]);
-
-  useEffect(() => {
-    if (admins) setLocalAdmins(admins);
-  }, [admins]);
+    if (!isOpen) {
+      if (disciplines) setLocalDisciplines(disciplines);
+      if (admins) setLocalAdmins(admins);
+      if (branding) {
+        setLocalTitle(branding.title || 'JL Sports Club 360');
+        setLocalSubtitle(branding.subtitle || 'CENTRO DE GESTIÓN DEPORTIVA');
+        setLocalSeason(branding.season || 'TEMPORADA 2026');
+      }
+    }
+  }, [disciplines, admins, branding, isOpen]);
 
   if (!isOpen) return null;
 
-  // ── Helper para Cargar Imagen Local (FileReader Base64) ─────
-  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>, onComplete: (dataUrl: string) => void) => {
+  // ── Helper para Cargar y Optimizar Imagen (Compresión automática en móvil/PC) ─────
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, onComplete: (dataUrl: string) => void) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('La imagen seleccionada es mayor a 5MB. Por favor selecciona una imagen más liviana.');
+      if (file.size > 15 * 1024 * 1024) {
+        alert('La imagen seleccionada es mayor a 15MB. Por favor selecciona una imagen más liviana.');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          onComplete(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFileToDataUri(file, 256, 0.82);
+        onComplete(compressed);
+      } catch (err) {
+        console.error('Error comprimiendo imagen:', err);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            onComplete(event.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -370,18 +386,21 @@ export function SettingsAppModal({
 
   // ── Guardar Todo ────────────────────────────────────────────
   const handleSaveAll = () => {
-    if (onSaveBranding) {
-      onSaveBranding({
-        title: localTitle,
-        subtitle: localSubtitle,
-        season: localSeason,
+    const brandData = {
+      title: localTitle,
+      subtitle: localSubtitle,
+      season: localSeason,
+    };
+    if (onSaveAllSettings) {
+      onSaveAllSettings({
+        branding: brandData,
+        disciplines: localDisciplines,
+        admins: localAdmins,
       });
-    }
-    if (onUpdateDisciplines) {
-      onUpdateDisciplines(localDisciplines);
-    }
-    if (onUpdateAdmins) {
-      onUpdateAdmins(localAdmins);
+    } else {
+      if (onSaveBranding) onSaveBranding(brandData);
+      if (onUpdateDisciplines) onUpdateDisciplines(localDisciplines);
+      if (onUpdateAdmins) onUpdateAdmins(localAdmins);
     }
     setSavedSuccess(true);
     setTimeout(() => {
@@ -669,7 +688,11 @@ export function SettingsAppModal({
                             
                             {newDiscCustomLogo ? (
                               <div className="flex items-center gap-3 p-2 bg-slate-950 border border-amber-500/60 rounded-lg">
-                                <img src={newDiscCustomLogo} alt="Logo" className="w-9 h-9 object-contain rounded-lg border border-slate-700 bg-slate-900" />
+                                <img 
+                                  src={resolveLogoUrl(newDiscCustomLogo)} 
+                                  alt="Logo" 
+                                  className="w-9 h-9 object-contain rounded-lg border border-slate-700 bg-slate-900" 
+                                />
                                 <div className="flex-1 overflow-hidden">
                                   <p className="text-[10px] font-black text-amber-400 uppercase truncate">Logo personalizado cargado</p>
                                   <button
@@ -685,7 +708,7 @@ export function SettingsAppModal({
                               <div className="flex items-center gap-2">
                                 <label className="flex-1 cursor-pointer py-2 px-3 bg-slate-950 hover:bg-slate-800 border border-dashed border-amber-500/70 rounded-lg flex items-center justify-center gap-2 text-amber-400 text-xs font-bold transition-colors">
                                   <Upload className="w-3.5 h-3.5" />
-                                  <span>Subir Logo desde PC</span>
+                                  <span>Subir Logo desde PC/Móvil</span>
                                   <input
                                     type="file"
                                     accept="image/*"
@@ -725,7 +748,17 @@ export function SettingsAppModal({
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shrink-0">
                                 {disc.customLogoUrl ? (
-                                  <img src={disc.customLogoUrl} alt={disc.title} className="w-full h-full object-contain" />
+                                  <img 
+                                    src={resolveLogoUrl(disc.customLogoUrl)} 
+                                    alt={disc.title} 
+                                    className="w-full h-full object-contain" 
+                                    onError={(e) => {
+                                      const el = e.currentTarget;
+                                      if (!el.src.includes('/DeportLambert/') && !el.src.startsWith('data:')) {
+                                        el.src = `/DeportLambert/${disc.customLogoUrl?.replace(/^(\.\/|\/)+/, '')}`;
+                                      }
+                                    }}
+                                  />
                                 ) : (
                                   <span className="text-xl">
                                     {disc.icon === 'basketball' && '🏀'}
@@ -821,7 +854,17 @@ export function SettingsAppModal({
                                   
                                   {disc.customLogoUrl ? (
                                     <div className="flex items-center gap-2 p-1.5 bg-slate-900 border border-amber-500/50 rounded-lg">
-                                      <img src={disc.customLogoUrl} alt="Logo" className="w-7 h-7 object-contain rounded bg-slate-950" />
+                                      <img 
+                                        src={resolveLogoUrl(disc.customLogoUrl)} 
+                                        alt="Logo" 
+                                        className="w-7 h-7 object-contain rounded bg-slate-950" 
+                                        onError={(e) => {
+                                          const el = e.currentTarget;
+                                          if (!el.src.includes('/DeportLambert/') && !el.src.startsWith('data:')) {
+                                            el.src = `/DeportLambert/${disc.customLogoUrl?.replace(/^(\.\/|\/)+/, '')}`;
+                                          }
+                                        }}
+                                      />
                                       <label className="cursor-pointer text-[9px] font-bold text-amber-400 hover:underline flex items-center gap-1">
                                         <Upload className="w-3 h-3" /> Reemplazar
                                         <input

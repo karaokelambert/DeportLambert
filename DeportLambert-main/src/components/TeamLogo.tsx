@@ -13,7 +13,7 @@ interface TeamLogoProps {
 }
 
 /**
- * Extrae la URL del logo soportando todos los formatos y campos posibles de Supabase / base de datos
+ * Extrae la URL del logo soportando todos los formatos y campos posibles de Supabase / base de datos y JOINs
  */
 export function getTeamLogoUrl(team?: any): string {
   if (!team) return '';
@@ -22,6 +22,18 @@ export function getTeamLogoUrl(team?: any): string {
     team.logoUrl ||
     team.logo_url ||
     team.logo ||
+    team.equipo_local?.logo_url ||
+    team.equipo_local?.logo ||
+    team.equipo_visitante?.logo_url ||
+    team.equipo_visitante?.logo ||
+    team.logo_local ||
+    team.logo_visitante ||
+    team.homeTeamLogo ||
+    team.awayTeamLogo ||
+    team.home_team_logo ||
+    team.away_team_logo ||
+    team.home_logo ||
+    team.away_logo ||
     team.image ||
     team.image_url ||
     team.escudo ||
@@ -41,74 +53,124 @@ export function getTeamLogoUrl(team?: any): string {
 /**
  * Resuelve rutas relativas para garantizar compatibilidad con GitHub Pages (/DeportLambert/) y dominios raíz
  */
-export function resolveLogoUrl(url: string): string {
+/**
+ * Resuelve rutas relativas para garantizar compatibilidad con GitHub Pages (/DeportLambert/), subrutas y dominios raíz en móviles
+ */
+export function resolveLogoUrl(url?: string): string {
   if (!url) return '';
   const trimmed = url.trim();
-  
-  // URLs absolutas, blob o data URIs
-  if (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('blob:')
-  ) {
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
+
+  // Data URIs y Blob URIs
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
 
-  // Si estamos en entorno navegador y en subdirectorio como /DeportLambert
+  // URLs absolutas HTTP / HTTPS
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    // Si la página se sirve sobre HTTPS, auto-mejorar HTTP a HTTPS para evitar bloqueos por contenido mixto en móviles
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
+      return trimmed.replace(/^http:\/\//i, 'https://');
+    }
+    return trimmed;
+  }
+
+  // Rutas relativas o locales
+  const cleanPath = trimmed.replace(/^(\.\/|\/)+/, '');
+
   if (typeof window !== 'undefined') {
     const pathname = window.location.pathname;
-    if (pathname.includes('/DeportLambert') && !trimmed.startsWith('/DeportLambert')) {
-      return `/DeportLambert${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+    if (pathname.includes('/DeportLambert')) {
+      return `/DeportLambert/${cleanPath}`;
     }
   }
 
-  return trimmed;
+  return `/${cleanPath}`;
 }
 
-export function compressImageFileToDataUri(file: File, maxDimension: number = 256, quality: number = 0.85): Promise<string> {
+/**
+ * Comprime y optimiza imágenes seleccionadas en móviles/PC antes de guardarlas en base de datos o localStorage
+ */
+export function compressImageFileToDataUri(file: File, maxDimension: number = 256, quality: number = 0.82): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
+    // Si el archivo ya es pequeño (SVG o formato vectorial), procesar directo
+    if (file.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
 
-        if (width > height) {
-          if (width > maxDimension) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          }
-        } else {
-          if (height > maxDimension) {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement('canvas');
+      let width = img.naturalWidth || img.width;
+      let height = img.naturalHeight || img.height;
+
+      if (width > height) {
+        if (width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
         }
+      } else {
+        if (height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(e.target?.result as string);
+      canvas.width = Math.max(width, 1);
+      canvas.height = Math.max(height, 1);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+
+      try {
+        // Intentar WebP para máxima compresión y calidad
+        const webpData = canvas.toDataURL('image/webp', quality);
+        if (webpData.startsWith('data:image/webp')) {
+          resolve(webpData);
           return;
         }
-        ctx.drawImage(img, 0, 0, width, height);
-        try {
-          const dataUri = canvas.toDataURL('image/webp', quality);
-          resolve(dataUri);
-        } catch {
-          const dataUri = canvas.toDataURL('image/png');
-          resolve(dataUri);
+      } catch (_) {}
+
+      try {
+        // Fallback a JPEG o PNG
+        if (file.type === 'image/png' && quality >= 0.8) {
+          const pngData = canvas.toDataURL('image/png');
+          resolve(pngData);
+        } else {
+          const jpegData = canvas.toDataURL('image/jpeg', quality);
+          resolve(jpegData);
         }
-      };
-      img.onerror = () => resolve(e.target?.result as string);
-      img.src = e.target?.result as string;
+      } catch {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(file);
+      }
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    };
+
+    img.src = objectUrl;
   });
 }
 
@@ -204,9 +266,9 @@ export default function TeamLogo({
   alt = 'Logo del Equipo'
 }: TeamLogoProps) {
   const [loadFailed, setLoadFailed] = useState(false);
-  const [attemptedFallback, setAttemptedFallback] = useState(false);
+  const [retryStep, setRetryStep] = useState(0);
 
-  const rawUrl = logoUrl || getTeamLogoUrl(team);
+  const rawUrl = (logoUrl || getTeamLogoUrl(team) || '').trim();
   const name = teamName || (typeof team === 'object' ? (team?.name || team?.team_name) : '') || '';
   const initials = getTeamInitials(name);
   const theme = getTeamTheme(name);
@@ -214,7 +276,7 @@ export default function TeamLogo({
   // Reiniciar estado si cambia la URL o el equipo
   useEffect(() => {
     setLoadFailed(false);
-    setAttemptedFallback(false);
+    setRetryStep(0);
   }, [rawUrl, name]);
 
   const sizeClasses = {
@@ -229,21 +291,40 @@ export default function TeamLogo({
   const currentSizeClass = sizeClasses[size] || sizeClasses.md;
 
   // 1. Si existe URL de imagen y no ha fallado la carga, renderizar la imagen
-  if (rawUrl && !loadFailed) {
-    const resolved = resolveLogoUrl(rawUrl);
+  if (rawUrl && rawUrl !== 'undefined' && rawUrl !== 'null' && !loadFailed) {
+    let resolved = resolveLogoUrl(rawUrl);
+
+    // Fallbacks progresivos si la ruta inicial falla en móviles
+    if (retryStep === 1) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `/DeportLambert/${clean}`;
+    } else if (retryStep === 2) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `/${clean}`;
+    } else if (retryStep === 3) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `./${clean}`;
+    }
 
     return (
       <div className={`relative flex items-center justify-center shrink-0 overflow-hidden ${currentSizeClass} ${className}`}>
         <img
+          key={`${resolved}-${retryStep}`}
           src={resolved}
           alt={name || alt}
+          decoding="async"
+          loading="lazy"
           className="w-full h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.6)] select-none transition-transform duration-200"
           style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-          onError={(e) => {
-            const el = e.currentTarget;
-            if (!attemptedFallback && !el.src.includes('/DeportLambert/') && !el.src.startsWith('data:')) {
-              setAttemptedFallback(true);
-              el.src = `/DeportLambert/${rawUrl.replace(/^\/+/, '')}`;
+          onError={() => {
+            // Si es Data URI o Blob URI y falló, no reintentar con rutas de servidor
+            if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) {
+              setLoadFailed(true);
+              return;
+            }
+
+            if (retryStep < 3) {
+              setRetryStep(prev => prev + 1);
             } else {
               setLoadFailed(true);
             }

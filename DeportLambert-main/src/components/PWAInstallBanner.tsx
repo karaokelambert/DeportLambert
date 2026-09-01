@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Download, X, Sparkles } from 'lucide-react';
+import { resolveLogoUrl } from './TeamLogo';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -119,8 +120,10 @@ export default function PWAInstallBanner() {
         <div className="flex items-center gap-3.5 pr-6 mb-3">
           <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-600 to-amber-700 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.5)] shrink-0 flex items-center justify-center overflow-hidden">
             <img 
-              src="/logo.png" 
+              src={resolveLogoUrl('/logo.png')} 
               alt="Logo JL Sports Club 360" 
+              decoding="async"
+              loading="lazy"
               className="w-full h-full object-contain rounded-[14px]"
               onError={(e) => {
                 const el = e.currentTarget;

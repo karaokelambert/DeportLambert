@@ -6,6 +6,7 @@ import { ShareAppModal, SettingsAppModal } from './PortalModals';
 
 import { DisciplineData } from './DisciplinesPortal';
 import { SuperAdminUser } from './PortalModals';
+import { resolveLogoUrl } from './TeamLogo';
 
 interface Navbar360Props {
   onBackToPortal?: () => void;
@@ -20,6 +21,11 @@ interface Navbar360Props {
   onUpdateDisciplines?: (d: DisciplineData[]) => void;
   admins?: SuperAdminUser[];
   onUpdateAdmins?: (a: SuperAdminUser[]) => void;
+  onSaveAllSettings?: (settings: {
+    branding?: { title: string, subtitle: string, season: string };
+    disciplines?: DisciplineData[];
+    admins?: SuperAdminUser[];
+  }) => void;
 }
 
 export default function Navbar360({ 
@@ -35,6 +41,7 @@ export default function Navbar360({
   onUpdateDisciplines,
   admins,
   onUpdateAdmins,
+  onSaveAllSettings,
 }: Navbar360Props) {
   const [modalOpen, setModalOpen] = useState<'share' | 'settings' | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -111,8 +118,10 @@ export default function Navbar360({
             {/* Logo Oficial JL Sports Club */}
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-900/60 via-slate-900 to-amber-950/40 p-1 border border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform overflow-hidden">
               <img 
-                src="/logo.png" 
+                src={resolveLogoUrl('/logo.png')} 
                 alt="Logo JL Sports Club 360" 
+                decoding="async"
+                loading="eager"
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   const el = e.currentTarget;
@@ -200,6 +209,7 @@ export default function Navbar360({
         onUpdateDisciplines={onUpdateDisciplines}
         admins={admins}
         onUpdateAdmins={onUpdateAdmins}
+        onSaveAllSettings={onSaveAllSettings}
       />
     </>
   );

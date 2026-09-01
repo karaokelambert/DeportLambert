@@ -95,7 +95,7 @@ import {
   SyncConfig, 
   CloudTournamentState 
 } from '../lib/cloudSync';
-import TeamLogo, { getTeamLogoUrl, compressImageFileToDataUri } from './TeamLogo';
+import TeamLogo, { getTeamLogoUrl, compressImageFileToDataUri, resolveLogoUrl } from './TeamLogo';
 import { 
   getSupabaseClient, 
   updateSingleGameInSupabase, 
@@ -315,8 +315,15 @@ export default function SportsManager() {
   const isHydratedRef = useRef<boolean>(false);
   const isLocallyMutatingRef = useRef<boolean>(false);
   const localMutationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const disciplineDataRef = useRef(disciplineData);
   disciplineDataRef.current = disciplineData;
+  const disciplinesListRef = useRef(disciplinesList);
+  disciplinesListRef.current = disciplinesList;
+  const brandingRef = useRef(branding);
+  brandingRef.current = branding;
+  const adminsRef = useRef(registeredAdmins);
+  adminsRef.current = registeredAdmins;
 
   useEffect(() => {
     async function initCloud() {
@@ -327,9 +334,18 @@ export default function SportsManager() {
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
           disciplineDataRef.current = remote.disciplineData;
           setDisciplineData(remote.disciplineData);
-          if (remote.disciplinesList) setDisciplinesList(remote.disciplinesList);
-          if (remote.branding) setBranding(remote.branding);
-          if (remote.registeredAdmins) setRegisteredAdmins(remote.registeredAdmins);
+          if (remote.disciplinesList) {
+            disciplinesListRef.current = remote.disciplinesList;
+            setDisciplinesList(remote.disciplinesList);
+          }
+          if (remote.branding) {
+            brandingRef.current = remote.branding;
+            setBranding(remote.branding);
+          }
+          if (remote.registeredAdmins) {
+            adminsRef.current = remote.registeredAdmins;
+            setRegisteredAdmins(remote.registeredAdmins);
+          }
           localVersionRef.current = Math.max(remote.version || 1, localVersionRef.current);
           localUpdatedAtRef.current = remote.updatedAt || Date.now();
           setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
@@ -340,9 +356,18 @@ export default function SportsManager() {
           if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
             disciplineDataRef.current = local.disciplineData;
             setDisciplineData(local.disciplineData);
-            if (local.disciplinesList) setDisciplinesList(local.disciplinesList);
-            if (local.branding) setBranding(local.branding);
-            if (local.registeredAdmins) setRegisteredAdmins(local.registeredAdmins);
+            if (local.disciplinesList) {
+              disciplinesListRef.current = local.disciplinesList;
+              setDisciplinesList(local.disciplinesList);
+            }
+            if (local.branding) {
+              brandingRef.current = local.branding;
+              setBranding(local.branding);
+            }
+            if (local.registeredAdmins) {
+              adminsRef.current = local.registeredAdmins;
+              setRegisteredAdmins(local.registeredAdmins);
+            }
             if (local.version) localVersionRef.current = local.version;
             if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
           }
@@ -355,15 +380,18 @@ export default function SportsManager() {
             const disc = prev[currentDiscKey] || defaultForCurrentDisc;
             const updatedTeams = disc.teams.map(t => {
               const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
-              return matched && matched.logoUrl ? { ...t, logoUrl: matched.logoUrl } : t;
+              const resolvedLogo = (matched && matched.logoUrl) ? matched.logoUrl : t.logoUrl;
+              return matched ? { ...t, ...matched, logoUrl: resolvedLogo } : t;
             });
-            return {
+            const nextState = {
               ...prev,
               [currentDiscKey]: {
                 ...disc,
                 teams: updatedTeams,
               }
             };
+            disciplineDataRef.current = nextState;
+            return nextState;
           });
         }
 
@@ -377,29 +405,77 @@ export default function SportsManager() {
     initCloud();
   }, [syncConfig, currentDiscKey]);
 
-  // Aplicar actualización remota de forma segura forzando nuevo objeto de estado
+  // Aplicar actualización remota de forma segura protegiendo contra reversiones
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
     if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
     
-    // Si estamos editando localmente en este mismo instante, no sobreescribir
+    // Si estamos editando localmente en este mismo instante, proteger la mutación local
     if (isLocallyMutatingRef.current) return;
 
-    const remoteStr = JSON.stringify(remote.disciplineData);
-    const localStr = JSON.stringify(disciplineDataRef.current);
+    const remoteVersion = remote.version || 0;
+    const remoteUpdated = remote.updatedAt || 0;
 
-    // Si los datos en la nube son diferentes o la versión es mayor, actualizar inmediatamente
-    if (remoteStr !== localStr || (remote.version && remote.version > localVersionRef.current)) {
-      disciplineDataRef.current = { ...remote.disciplineData };
-      setDisciplineData({ ...remote.disciplineData });
-      if (remote.disciplinesList) setDisciplinesList([...remote.disciplinesList]);
-      if (remote.branding) setBranding({ ...remote.branding });
-      if (remote.registeredAdmins) setRegisteredAdmins([...remote.registeredAdmins]);
-      localVersionRef.current = Math.max(remote.version || 1, localVersionRef.current);
-      localUpdatedAtRef.current = remote.updatedAt || Date.now();
-      setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
-      setSyncStatus('synced');
-      saveLocalState(remote);
+    // Protección anti-reversión: Si el estado local es más nuevo (por versión o timestamp), ignorar estado viejo
+    if (localVersionRef.current > 1 && remoteVersion < localVersionRef.current && remoteUpdated <= localUpdatedAtRef.current) {
+      return;
     }
+
+    // Merge cuidadoso: Si el remoto tiene equipos o disciplinas pero le faltan logos que ya teníamos, conservarlos
+    const currentLocal = disciplineDataRef.current || {};
+    const mergedDisciplineData = { ...remote.disciplineData };
+
+    Object.keys(currentLocal).forEach(discKey => {
+      const localDisc = currentLocal[discKey];
+      const remoteDisc = mergedDisciplineData[discKey];
+      if (localDisc?.teams && remoteDisc?.teams) {
+        remoteDisc.teams = remoteDisc.teams.map((rt: Team) => {
+          const lt = localDisc.teams.find((t: Team) => t.id === rt.id || t.name.toLowerCase() === rt.name.toLowerCase());
+          if (!rt.logoUrl && lt?.logoUrl) {
+            return { ...rt, logoUrl: lt.logoUrl };
+          }
+          return rt;
+        });
+      }
+    });
+
+    // Merge de disciplinas: conservar customLogoUrl si existe localmente
+    let mergedDisciplinesList = remote.disciplinesList;
+    if (Array.isArray(disciplinesListRef.current) && Array.isArray(remote.disciplinesList)) {
+      mergedDisciplinesList = remote.disciplinesList.map(rd => {
+        const ld = disciplinesListRef.current.find(d => d.id === rd.id);
+        if (!rd.customLogoUrl && ld?.customLogoUrl) {
+          return { ...rd, customLogoUrl: ld.customLogoUrl };
+        }
+        return rd;
+      });
+    }
+
+    disciplineDataRef.current = mergedDisciplineData;
+    setDisciplineData(mergedDisciplineData);
+    if (mergedDisciplinesList) {
+      disciplinesListRef.current = mergedDisciplinesList;
+      setDisciplinesList(mergedDisciplinesList);
+    }
+    if (remote.branding) {
+      brandingRef.current = remote.branding;
+      setBranding({ ...remote.branding });
+    }
+    if (remote.registeredAdmins) {
+      adminsRef.current = remote.registeredAdmins;
+      setRegisteredAdmins([...remote.registeredAdmins]);
+    }
+    localVersionRef.current = Math.max(remoteVersion, localVersionRef.current);
+    localUpdatedAtRef.current = Math.max(remoteUpdated, localUpdatedAtRef.current, Date.now());
+    setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
+    setSyncStatus('synced');
+    saveLocalState({
+      version: localVersionRef.current,
+      updatedAt: localUpdatedAtRef.current,
+      disciplineData: mergedDisciplineData,
+      disciplinesList: mergedDisciplinesList,
+      branding: remote.branding,
+      registeredAdmins: remote.registeredAdmins,
+    });
   }, []);
 
   // Suscripción Realtime directa para partidos y equipos
@@ -429,6 +505,12 @@ export default function SportsManager() {
                   awayQuarters: n.away_quarters || n.cuartos_visitante || g.awayQuarters,
                   status: n.status || n.estado || g.status,
                   currentQuarter: n.current_quarter || g.currentQuarter,
+                  equipo_local: n.equipo_local || g.equipo_local,
+                  equipo_visitante: n.equipo_visitante || g.equipo_visitante,
+                  logo_local: n.logo_local || (g as any).logo_local,
+                  logo_visitante: n.logo_visitante || (g as any).logo_visitante,
+                  homeTeamLogo: n.home_team_logo || n.home_logo || (g as any).homeTeamLogo,
+                  awayTeamLogo: n.away_team_logo || n.away_logo || (g as any).awayTeamLogo,
                 };
               }
               return g;
@@ -455,6 +537,7 @@ export default function SportsManager() {
             const disc = n.discipline || currentDiscKey;
             const discState = prev[disc] || defaultForCurrentDisc;
             const teamsList: Team[] = discState.teams || [];
+            const incomingLogo = n.logo_url || n.logo;
 
             const updated = teamsList.map(t => {
               if (t.id === cleanId || `${disc}_${t.id}` === n.id || t.id === n.id || t.name.toLowerCase() === (n.name || '').toLowerCase()) {
@@ -464,7 +547,7 @@ export default function SportsManager() {
                   delegado: n.delegado || t.delegado,
                   telefono: n.telefono || t.telefono,
                   group: n.group_name || n.group || t.group,
-                  logoUrl: n.logo_url || n.logo || t.logoUrl,
+                  logoUrl: incomingLogo ? incomingLogo : t.logoUrl,
                   jugadores: n.jugadores || t.jugadores,
                   delegatePin: n.delegate_pin || t.delegatePin,
                 };
@@ -472,11 +555,28 @@ export default function SportsManager() {
               return t;
             });
 
+            // Actualizar también los logos embebidos en los partidos que juegue este equipo
+            const updatedGames = (discState.games || []).map(g => {
+              const matchesHome = g.homeTeam?.toLowerCase() === (n.name || '').toLowerCase() || (g as any).homeTeamId === cleanId;
+              const matchesAway = g.awayTeam?.toLowerCase() === (n.name || '').toLowerCase() || (g as any).awayTeamId === cleanId;
+              if (matchesHome || matchesAway) {
+                return {
+                  ...g,
+                  homeTeamLogo: matchesHome && incomingLogo ? incomingLogo : (g as any).homeTeamLogo,
+                  awayTeamLogo: matchesAway && incomingLogo ? incomingLogo : (g as any).awayTeamLogo,
+                  logo_local: matchesHome && incomingLogo ? incomingLogo : (g as any).logo_local,
+                  logo_visitante: matchesAway && incomingLogo ? incomingLogo : (g as any).logo_visitante,
+                };
+              }
+              return g;
+            });
+
             const nextData = {
               ...prev,
               [disc]: {
                 ...discState,
                 teams: updated,
+                games: updatedGames,
               }
             };
             disciplineDataRef.current = nextData;
@@ -533,7 +633,7 @@ export default function SportsManager() {
     };
   }, [applyRemoteUpdate, syncConfig]);
 
-  // Polling de respaldo cada 1.5s para sincronizar marcadores y equipos sin interrupciones
+  // Polling de respaldo cada 2.5s para sincronizar marcadores y equipos sin interrupciones
   useEffect(() => {
     const timer = setInterval(async () => {
       if (!syncConfig.enabled || isLocallyMutatingRef.current) return;
@@ -543,7 +643,7 @@ export default function SportsManager() {
           applyRemoteUpdate(remote);
         }
       } catch (e) {}
-    }, 1500);
+    }, 2500);
 
     return () => clearInterval(timer);
   }, [syncConfig, applyRemoteUpdate]);
@@ -559,24 +659,39 @@ export default function SportsManager() {
 
     setSyncStatus('syncing');
     const currentDataToPush = customData?.disciplineData || disciplineDataRef.current || disciplineData;
+    const currentDisciplinesListToPush = customData?.disciplinesList || disciplinesListRef.current || disciplinesList;
+    const currentBrandingToPush = customData?.branding || brandingRef.current || branding;
+    const currentAdminsToPush = customData?.registeredAdmins || adminsRef.current || registeredAdmins;
 
     const payload: CloudTournamentState = {
       version: nextVersion,
       updatedAt: now,
       updatedBy: userName || role,
       disciplineData: currentDataToPush,
-      disciplinesList: customData?.disciplinesList || disciplinesList,
-      branding: customData?.branding || branding,
-      registeredAdmins: customData?.registeredAdmins || registeredAdmins,
+      disciplinesList: currentDisciplinesListToPush,
+      branding: currentBrandingToPush,
+      registeredAdmins: currentAdminsToPush,
     };
-    saveLocalState(payload);
-    const ok = await pushStateToCloud(payload, syncConfig);
-    setSyncStatus(ok ? 'synced' : 'offline');
-    setLastSyncTime(new Date(now).toLocaleTimeString());
 
+    disciplineDataRef.current = currentDataToPush;
+    disciplinesListRef.current = currentDisciplinesListToPush;
+    brandingRef.current = currentBrandingToPush;
+    adminsRef.current = currentAdminsToPush;
+    saveLocalState(payload);
+
+    try {
+      const ok = await pushStateToCloud(payload, syncConfig);
+      setSyncStatus(ok ? 'synced' : 'offline');
+      setLastSyncTime(new Date(now).toLocaleTimeString());
+    } catch (err) {
+      console.warn('Error al sincronizar con la nube:', err);
+      setSyncStatus('offline');
+    }
+
+    // Mantener la protección de mutación local por 3.5 segundos para que polling no interfiera
     localMutationTimeoutRef.current = setTimeout(() => {
       isLocallyMutatingRef.current = false;
-    }, 500);
+    }, 3500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
 
   const currentTeams = disciplineData[currentDiscKey]?.teams || defaultForCurrentDisc.teams;
@@ -925,18 +1040,45 @@ export default function SportsManager() {
     }
   };
 
+  const handleSaveAllSettings = (settings: {
+    branding?: typeof branding;
+    disciplines?: typeof disciplinesList;
+    admins?: typeof registeredAdmins;
+  }) => {
+    if (settings.branding) {
+      setBranding(settings.branding);
+      brandingRef.current = settings.branding;
+    }
+    if (settings.disciplines) {
+      setDisciplinesList(settings.disciplines);
+      disciplinesListRef.current = settings.disciplines;
+    }
+    if (settings.admins) {
+      setRegisteredAdmins(settings.admins);
+      adminsRef.current = settings.admins;
+    }
+    triggerPushSync({
+      branding: settings.branding || brandingRef.current || branding,
+      disciplinesList: settings.disciplines || disciplinesListRef.current || disciplinesList,
+      registeredAdmins: settings.admins || adminsRef.current || registeredAdmins,
+    });
+  };
+
   const handleSaveBranding = (newBranding: typeof branding) => {
     setBranding(newBranding);
+    brandingRef.current = newBranding;
     triggerPushSync({ branding: newBranding });
   };
 
   const handleUpdateDisciplines = (newList: typeof disciplinesList) => {
     setDisciplinesList(newList);
+    disciplinesListRef.current = newList;
     triggerPushSync({ disciplinesList: newList });
   };
 
   const handleUpdateAdmins = (newAdmins: typeof registeredAdmins) => {
     setRegisteredAdmins(newAdmins);
+    adminsRef.current = newAdmins;
     triggerPushSync({ registeredAdmins: newAdmins });
   };
 
@@ -951,6 +1093,7 @@ export default function SportsManager() {
           onUpdateDisciplines={handleUpdateDisciplines}
           admins={registeredAdmins}
           onUpdateAdmins={handleUpdateAdmins}
+          onSaveAllSettings={handleSaveAllSettings}
         />
         <main className="flex-1 flex flex-col justify-center py-6">
           <DisciplinesPortal 
@@ -991,6 +1134,7 @@ export default function SportsManager() {
           onUpdateDisciplines={handleUpdateDisciplines}
           admins={registeredAdmins}
           onUpdateAdmins={handleUpdateAdmins}
+          onSaveAllSettings={handleSaveAllSettings}
         />
 
         <div className="flex-1 flex items-center justify-center p-4">
@@ -1014,7 +1158,18 @@ export default function SportsManager() {
                 <div className="text-center relative z-10 flex items-center gap-3">
                   <div className="p-1.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-lg flex items-center justify-center w-14 h-14 overflow-hidden">
                     {selectedDiscipline.customLogoUrl ? (
-                      <img src={selectedDiscipline.customLogoUrl} alt={selectedDiscipline.title} className="w-full h-full object-contain" />
+                      <img 
+                        src={resolveLogoUrl(selectedDiscipline.customLogoUrl)} 
+                        alt={selectedDiscipline.title} 
+                        decoding="async"
+                        className="w-full h-full object-contain" 
+                        onError={(e) => {
+                          const el = e.currentTarget;
+                          if (!el.src.includes('/DeportLambert/') && !el.src.startsWith('data:')) {
+                            el.src = `/DeportLambert/${selectedDiscipline.customLogoUrl?.replace(/^(\.\/|\/)+/, '')}`;
+                          }
+                        }}
+                      />
                     ) : (
                       <>
                         {selectedDiscipline.icon === 'basketball' && <BasketballIcon3D className="w-12 h-12" />}
@@ -1213,8 +1368,9 @@ export default function SportsManager() {
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-950/60 p-0.5 overflow-hidden">
               <img 
-                src="/logo.png" 
+                src={resolveLogoUrl('/logo.png')} 
                 alt="Logo JL Sports Club 360" 
+                decoding="async"
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   const el = e.currentTarget;
@@ -1790,8 +1946,8 @@ function DashboardView({
 
             const homeTeamObj = findTeam((g as any).homeTeamId || (g as any).home_team_id || g.homeTeam);
             const awayTeamObj = findTeam((g as any).awayTeamId || (g as any).away_team_id || g.awayTeam);
-            const homeLogo = (g as any).homeTeamLogo || (g as any).home_logo || (g as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
-            const awayLogo = (g as any).awayTeamLogo || (g as any).away_logo || (g as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
+            const homeLogo = (g as any).equipo_local?.logo_url || (g as any).equipo_local?.logo || (g as any).logo_local || (g as any).homeTeamLogo || (g as any).home_logo || (g as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+            const awayLogo = (g as any).equipo_visitante?.logo_url || (g as any).equipo_visitante?.logo || (g as any).logo_visitante || (g as any).awayTeamLogo || (g as any).away_logo || (g as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
 
             return (
               <div 
@@ -2282,7 +2438,11 @@ function TeamsView({
                   </div>
                 ) : newTeam.logoUrl ? (
                   <div className="flex flex-col items-center gap-2">
-                    <img src={newTeam.logoUrl} alt="Preview" className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" />
+                    <img 
+                      src={resolveLogoUrl(newTeam.logoUrl)} 
+                      alt="Preview" 
+                      className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" 
+                    />
                     <span className="text-[10px] text-amber-400 font-bold uppercase hover:underline">Cambiar imagen</span>
                   </div>
                 ) : (
@@ -3421,8 +3581,8 @@ function CalendarView({
 
             const homeTeamObj = findTeam((game as any).homeTeamId || (game as any).home_team_id || game.homeTeam);
             const awayTeamObj = findTeam((game as any).awayTeamId || (game as any).away_team_id || game.awayTeam);
-            const homeLogo = (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
-            const awayLogo = (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
+            const homeLogo = (game as any).equipo_local?.logo_url || (game as any).equipo_local?.logo || (game as any).logo_local || (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+            const awayLogo = (game as any).equipo_visitante?.logo_url || (game as any).equipo_visitante?.logo || (game as any).logo_visitante || (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
 
             return (
               <div 
@@ -3880,7 +4040,7 @@ function CompactMatchCard({
             );
           };
           const homeTeamObj = findTeam((game as any).homeTeamId || (game as any).home_team_id || game.homeTeam);
-          const homeLogo = (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
+          const homeLogo = (game as any).equipo_local?.logo_url || (game as any).equipo_local?.logo || (game as any).logo_local || (game as any).homeTeamLogo || (game as any).home_logo || (game as any).home_team_logo || getTeamLogoUrl(homeTeamObj);
 
           return (
             <div className="flex flex-col items-center space-y-1.5 min-w-0">
@@ -3909,7 +4069,7 @@ function CompactMatchCard({
             );
           };
           const awayTeamObj = findTeam((game as any).awayTeamId || (game as any).away_team_id || game.awayTeam);
-          const awayLogo = (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
+          const awayLogo = (game as any).equipo_visitante?.logo_url || (game as any).equipo_visitante?.logo || (game as any).logo_visitante || (game as any).awayTeamLogo || (game as any).away_logo || (game as any).away_team_logo || getTeamLogoUrl(awayTeamObj);
 
           return (
             <div className="flex flex-col items-center space-y-1.5 min-w-0 border-l border-slate-800 pl-2">
@@ -4347,7 +4507,11 @@ function EditTeamDialog({
               </div>
             ) : team.logoUrl ? (
               <div className="flex flex-col items-center gap-2">
-                <img src={team.logoUrl} alt="Preview" className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" />
+                <img 
+                  src={resolveLogoUrl(team.logoUrl)} 
+                  alt="Preview" 
+                  className="w-16 h-16 object-contain rounded-lg border border-slate-700 shadow-md" 
+                />
                 <span className="text-[10px] text-amber-400 font-bold uppercase hover:underline">Cambiar imagen</span>
               </div>
             ) : (

@@ -8,6 +8,7 @@ import {
   BaseballIcon3D 
 } from './SportsIcons3D';
 import { ArrowRight, Sparkles, Shield, Trophy } from 'lucide-react';
+import { resolveLogoUrl } from './TeamLogo';
 
 export interface DisciplineData {
   id: string;
@@ -71,14 +72,48 @@ interface DisciplinesPortalProps {
 
 function DisciplineLogoIcon({ disc }: { disc: DisciplineData }) {
   const [imgError, setImgError] = useState(false);
+  const [retryStep, setRetryStep] = useState(0);
 
-  if (disc.customLogoUrl && !imgError) {
+  const rawUrl = (disc.customLogoUrl || '').trim();
+
+  useEffect(() => {
+    setImgError(false);
+    setRetryStep(0);
+  }, [rawUrl, disc.id]);
+
+  if (rawUrl && rawUrl !== 'undefined' && rawUrl !== 'null' && !imgError) {
+    let resolved = resolveLogoUrl(rawUrl);
+
+    if (retryStep === 1) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `/DeportLambert/${clean}`;
+    } else if (retryStep === 2) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `/${clean}`;
+    } else if (retryStep === 3) {
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      resolved = `./${clean}`;
+    }
+
     return (
       <img 
-        src={disc.customLogoUrl} 
+        key={`${resolved}-${retryStep}`}
+        src={resolved} 
         alt={disc.title} 
-        onError={() => setImgError(true)}
-        className="w-20 h-20 sm:w-24 sm:h-24 max-w-[96px] max-h-[96px] object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)]"
+        decoding="async"
+        loading="lazy"
+        onError={() => {
+          if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) {
+            setImgError(true);
+            return;
+          }
+          if (retryStep < 3) {
+            setRetryStep(prev => prev + 1);
+          } else {
+            setImgError(true);
+          }
+        }}
+        className="w-20 h-20 sm:w-24 sm:h-24 max-w-[96px] max-h-[96px] object-contain rounded-2xl drop-shadow-[0_0_15px_rgba(255,138,0,0.4)] transition-transform duration-200"
         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
       />
     );

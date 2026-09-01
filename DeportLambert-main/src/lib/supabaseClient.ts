@@ -434,15 +434,33 @@ export async function updateSingleTeamInSupabase(discipline: string, team: any):
 
 /**
  * Consulta directa de datos de tablas Supabase ('equipos' y 'partidos')
+ * Embebe directamente los logos de los equipos en la consulta de partidos mediante JOIN relacional
  */
 export async function fetchSupabaseDirectData(disciplineId: string = 'baloncesto'): Promise<{ teams: any[]; games: any[] } | null> {
   const client = getSupabaseClient();
   if (!client) return null;
   try {
-    const [teamsRes, gamesRes] = await Promise.all([
-      client.from('equipos').select('*').eq('discipline', disciplineId),
-      client.from('partidos').select('*').eq('discipline', disciplineId)
-    ]);
+    // 1. Obtener equipos
+    const teamsRes = await client.from('equipos').select('*').eq('discipline', disciplineId);
+    
+    // 2. Intentar consulta con JOIN relacional explícito para partidos con logos embebidos
+    let gamesRaw: any[] = [];
+    const joinRes = await client
+      .from('partidos')
+      .select(`
+        *,
+        equipo_local:equipos!id_local(id, name, logo_url, logo),
+        equipo_visitante:equipos!id_visitante(id, name, logo_url, logo)
+      `)
+      .eq('discipline', disciplineId);
+
+    if (!joinRes.error && joinRes.data && joinRes.data.length > 0) {
+      gamesRaw = joinRes.data;
+    } else {
+      // Fallback a select general de partidos
+      const fallbackRes = await client.from('partidos').select('*').eq('discipline', disciplineId);
+      gamesRaw = fallbackRes.data || [];
+    }
 
     if (!teamsRes.error && teamsRes.data && teamsRes.data.length > 0) {
       const teams = teamsRes.data.map(t => ({
@@ -456,21 +474,42 @@ export async function fetchSupabaseDirectData(disciplineId: string = 'baloncesto
         delegatePin: t.delegate_pin || '1234',
       }));
 
-      const games = (gamesRes.data || []).map(g => ({
-        id: g.id.replace(`${disciplineId}_`, ''),
-        homeTeam: g.home_team || g.equipo_local,
-        awayTeam: g.away_team || g.equipo_visitante,
-        homeScore: g.home_score !== undefined ? g.home_score : (g.marcador_local || 0),
-        awayScore: g.away_score !== undefined ? g.away_score : (g.marcador_visitante || 0),
-        homeQuarters: g.home_quarters || g.cuartos_local || [0, 0, 0, 0],
-        awayQuarters: g.away_quarters || g.cuartos_visitante || [0, 0, 0, 0],
-        currentQuarter: g.current_quarter || 1,
-        date: g.date || g.fecha || '',
-        time: g.time || g.hora || '',
-        location: g.location || g.lugar || '',
-        phase: g.phase || '',
-        status: g.status || g.estado || 'Programado',
-      }));
+      // Mapa de logos de equipos para resolución ultra-rápida y defensiva
+      const teamLogoMap: Record<string, string> = {};
+      teams.forEach(t => {
+        if (t.name) teamLogoMap[t.name.toLowerCase().trim()] = t.logoUrl;
+        if (t.id) teamLogoMap[t.id.toLowerCase().trim()] = t.logoUrl;
+      });
+
+      const games = gamesRaw.map(g => {
+        const homeName = g.home_team || g.equipo_local?.name || (typeof g.equipo_local === 'string' ? g.equipo_local : '') || '';
+        const awayName = g.away_team || g.equipo_visitante?.name || (typeof g.equipo_visitante === 'string' ? g.equipo_visitante : '') || '';
+
+        const logoLocal = g.equipo_local?.logo_url || g.equipo_local?.logo || g.logo_local || g.home_team_logo || g.home_logo || teamLogoMap[homeName.toLowerCase().trim()] || teamLogoMap[g.id_local?.toLowerCase()?.trim()] || '';
+        const logoVisitante = g.equipo_visitante?.logo_url || g.equipo_visitante?.logo || g.logo_visitante || g.away_team_logo || g.away_logo || teamLogoMap[awayName.toLowerCase().trim()] || teamLogoMap[g.id_visitante?.toLowerCase()?.trim()] || '';
+
+        return {
+          id: g.id.replace(`${disciplineId}_`, ''),
+          homeTeam: homeName,
+          awayTeam: awayName,
+          homeScore: g.home_score !== undefined ? g.home_score : (g.marcador_local || 0),
+          awayScore: g.away_score !== undefined ? g.away_score : (g.marcador_visitante || 0),
+          homeQuarters: g.home_quarters || g.cuartos_local || [0, 0, 0, 0],
+          awayQuarters: g.away_quarters || g.cuartos_visitante || [0, 0, 0, 0],
+          currentQuarter: g.current_quarter || 1,
+          date: g.date || g.fecha || '',
+          time: g.time || g.hora || '',
+          location: g.location || g.lugar || '',
+          phase: g.phase || '',
+          status: g.status || g.estado || 'Programado',
+          equipo_local: g.equipo_local || { id: g.id_local || '', name: homeName, logo_url: logoLocal, logo: logoLocal },
+          equipo_visitante: g.equipo_visitante || { id: g.id_visitante || '', name: awayName, logo_url: logoVisitante, logo: logoVisitante },
+          logo_local: logoLocal,
+          logo_visitante: logoVisitante,
+          homeTeamLogo: logoLocal,
+          awayTeamLogo: logoVisitante,
+        };
+      });
 
       return { teams, games };
     }
