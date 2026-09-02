@@ -386,80 +386,149 @@ export async function broadcastScoreUpdate(discipline: string, payload: any) {
  */
 export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; error?: any }> {
   const client = getSupabaseClient();
-  if (!client) return { ok: false, error: 'No Supabase client' };
+  if (!client) return { ok: false, error: new Error('No Supabase client initialized') };
   
-  const primaryId = game.id.includes('_') ? game.id : `${discipline}_${game.id}`;
+  const rawId = String(game.id || '').replace(/^[a-z0-9]+_/, '');
+  const primaryId = String(game.id || '').includes('_') ? game.id : `${discipline}_${game.id}`;
   
+  const homeScore = Number(game.homeScore !== undefined ? game.homeScore : (game.marcador_local || 0));
+  const awayScore = Number(game.awayScore !== undefined ? game.awayScore : (game.marcador_visitante || 0));
+  const homeQuarters = Array.isArray(game.homeQuarters) ? game.homeQuarters : (game.cuartos_local || [0, 0, 0, 0]);
+  const awayQuarters = Array.isArray(game.awayQuarters) ? game.awayQuarters : (game.cuartos_visitante || [0, 0, 0, 0]);
+  const currentQuarter = Number(game.currentQuarter || 1);
+  const status = game.status || game.estado || 'Programado';
+  const nowIso = new Date().toISOString();
+
   // 1. Emitir inmediatamente por el canal de Broadcast para sincronización instantánea sub-segundo (< 0.5s)
   broadcastScoreUpdate(discipline, {
-    gameId: game.id,
+    gameId: rawId,
     id: primaryId,
     homeTeam: game.homeTeam,
     awayTeam: game.awayTeam,
-    homeScore: Number(game.homeScore || 0),
-    awayScore: Number(game.awayScore || 0),
-    homeQuarters: game.homeQuarters || [0, 0, 0, 0],
-    awayQuarters: game.awayQuarters || [0, 0, 0, 0],
-    currentQuarter: Number(game.currentQuarter || 1),
-    status: game.status || 'Programado',
+    homeScore,
+    awayScore,
+    homeQuarters,
+    awayQuarters,
+    currentQuarter,
+    status,
     discipline,
   });
 
   try {
-    const row: any = {
-      id: primaryId,
-      discipline,
-      home_team: game.homeTeam,
-      away_team: game.awayTeam,
-      home_score: Number(game.homeScore || 0),
-      away_score: Number(game.awayScore || 0),
-      home_quarters: game.homeQuarters || [0, 0, 0, 0],
-      away_quarters: game.awayQuarters || [0, 0, 0, 0],
-      current_quarter: Number(game.currentQuarter || 1),
-      date: game.date || '',
-      time: game.time || '',
-      location: game.location || '',
-      phase: game.phase || '',
-      status: game.status || 'Programado',
-      updated_at: new Date().toISOString()
+    // 2. Ejecutar UPDATE asíncrono real en tabla 'partidos'
+    const updateStandard: any = {
+      home_score: homeScore,
+      away_score: awayScore,
+      home_quarters: homeQuarters,
+      away_quarters: awayQuarters,
+      current_quarter: currentQuarter,
+      status: status,
+      updated_at: nowIso,
     };
 
-    const res = await client
+    let { data, error } = await client
       .from('partidos')
-      .upsert(row, { onConflict: 'id' })
+      .update(updateStandard)
+      .eq('id', primaryId)
       .select();
 
-    if (!res.error) {
-      console.log('[Supabase Direct] Partido actualizado exitosamente en BD:', primaryId);
-      return { ok: true, status: 200 };
+    // Si no se afectaron filas por primaryId, intentar con rawId
+    if (!error && (!data || data.length === 0)) {
+      const resRaw = await client
+        .from('partidos')
+        .update(updateStandard)
+        .eq('id', rawId)
+        .select();
+      
+      if (!resRaw.error && resRaw.data && resRaw.data.length > 0) {
+        data = resRaw.data;
+      }
     }
 
-    // Fallback con nombres en español si la tabla fue creada con otro esquema
-    const altRow: any = {
-      id: primaryId,
-      discipline,
-      equipo_local: game.homeTeam,
-      equipo_visitante: game.awayTeam,
-      marcador_local: Number(game.homeScore || 0),
-      marcador_visitante: Number(game.awayScore || 0),
-      cuartos_local: game.homeQuarters || [0, 0, 0, 0],
-      cuartos_visitante: game.awayQuarters || [0, 0, 0, 0],
-      cuartos: [game.homeQuarters || [0, 0, 0, 0], game.awayQuarters || [0, 0, 0, 0]],
-      estado: game.status || 'Programado',
-      updated_at: new Date().toISOString()
-    };
+    // Si falló por nombres de columnas en español, intentar con esquema alternativo en español
+    if (error && error.message && (error.message.includes('column') || (error as any).code === '42703')) {
+      const updateSpanish: any = {
+        marcador_local: homeScore,
+        marcador_visitante: awayScore,
+        q1_local: Number(homeQuarters[0] || 0),
+        q2_local: Number(homeQuarters[1] || 0),
+        q3_local: Number(homeQuarters[2] || 0),
+        q4_local: Number(homeQuarters[3] || 0),
+        q1_vis: Number(awayQuarters[0] || 0),
+        q2_vis: Number(awayQuarters[1] || 0),
+        q3_vis: Number(awayQuarters[2] || 0),
+        q4_vis: Number(awayQuarters[3] || 0),
+        cuartos_local: homeQuarters,
+        cuartos_visitante: awayQuarters,
+        cuartos: [homeQuarters, awayQuarters],
+        estado: status,
+        updated_at: nowIso,
+      };
 
-    const altRes = await client
-      .from('partidos')
-      .upsert(altRow, { onConflict: 'id' });
-
-    if (!altRes.error) {
-      return { ok: true, status: 200 };
+      const resSp = await client
+        .from('partidos')
+        .update(updateSpanish)
+        .eq('id', primaryId)
+        .select();
+      
+      if (!resSp.error && resSp.data && resSp.data.length > 0) {
+        data = resSp.data;
+        error = null;
+      } else if (!resSp.error) {
+        const resSpRaw = await client
+          .from('partidos')
+          .update(updateSpanish)
+          .eq('id', rawId)
+          .select();
+        data = resSpRaw.data;
+        error = resSpRaw.error;
+      } else {
+        error = resSp.error;
+      }
     }
 
-    return { ok: false, error: res.error || altRes.error };
-  } catch (e) {
-    return { ok: false, error: e };
+    // Si todavía no se afectaron filas (partido no insertado previamente en la tabla), hacer upsert completo
+    if (!error && (!data || data.length === 0)) {
+      const upsertRow: any = {
+        id: primaryId,
+        discipline,
+        home_team: game.homeTeam,
+        away_team: game.awayTeam,
+        home_score: homeScore,
+        away_score: awayScore,
+        home_quarters: homeQuarters,
+        away_quarters: awayQuarters,
+        current_quarter: currentQuarter,
+        date: game.date || '',
+        time: game.time || '',
+        location: game.location || '',
+        phase: game.phase || '',
+        status: status,
+        updated_at: nowIso,
+      };
+
+      const upsertRes = await client
+        .from('partidos')
+        .upsert(upsertRow, { onConflict: 'id' })
+        .select();
+
+      if (!upsertRes.error) {
+        console.log('[Supabase Direct] Partido persistido vía upsert:', primaryId);
+        return { ok: true, status: 200 };
+      }
+      error = upsertRes.error;
+    }
+
+    if (error) {
+      console.error('[Supabase Direct] Error al persistir en tabla partidos:', error);
+      return { ok: false, error };
+    }
+
+    console.log('[Supabase Direct] Partido actualizado exitosamente en BD:', primaryId);
+    return { ok: true, status: 200 };
+  } catch (err: any) {
+    console.error('[Supabase Direct] Excepción al persistir:', err);
+    return { ok: false, error: err };
   }
 }
 
@@ -526,57 +595,71 @@ export async function fetchSupabaseDirectData(disciplineId: string = 'baloncesto
       gamesRaw = fallbackRes.data || [];
     }
 
-    if (!teamsRes.error && teamsRes.data && teamsRes.data.length > 0) {
-      const teams = teamsRes.data.map(t => ({
-        id: t.id.replace(`${disciplineId}_`, ''),
-        name: t.name,
-        delegado: t.delegado || '',
-        telefono: t.telefono || '',
-        group: t.group_name || 'Grupo A',
-        logoUrl: t.logo_url || t.logo || '',
-        jugadores: t.jugadores || [],
-        delegatePin: t.delegate_pin || '1234',
-      }));
+    const teams = (teamsRes.data || []).map(t => ({
+      id: t.id.replace(`${disciplineId}_`, ''),
+      name: t.name,
+      delegado: t.delegado || '',
+      telefono: t.telefono || '',
+      group: t.group_name || 'Grupo A',
+      logoUrl: t.logo_url || t.logo || '',
+      jugadores: t.jugadores || [],
+      delegatePin: t.delegate_pin || '1234',
+    }));
 
-      // Mapa de logos de equipos para resolución ultra-rápida y defensiva
-      const teamLogoMap: Record<string, string> = {};
-      teams.forEach(t => {
-        if (t.name) teamLogoMap[t.name.toLowerCase().trim()] = t.logoUrl;
-        if (t.id) teamLogoMap[t.id.toLowerCase().trim()] = t.logoUrl;
-      });
+    // Mapa de logos de equipos para resolución ultra-rápida y defensiva
+    const teamLogoMap: Record<string, string> = {};
+    teams.forEach(t => {
+      if (t.name) teamLogoMap[t.name.toLowerCase().trim()] = t.logoUrl;
+      if (t.id) teamLogoMap[t.id.toLowerCase().trim()] = t.logoUrl;
+    });
 
-      const games = gamesRaw.map(g => {
-        const homeName = g.home_team || g.equipo_local?.name || (typeof g.equipo_local === 'string' ? g.equipo_local : '') || '';
-        const awayName = g.away_team || g.equipo_visitante?.name || (typeof g.equipo_visitante === 'string' ? g.equipo_visitante : '') || '';
+    const games = gamesRaw.map(g => {
+      const homeName = g.home_team || g.equipo_local?.name || (typeof g.equipo_local === 'string' ? g.equipo_local : '') || '';
+      const awayName = g.away_team || g.equipo_visitante?.name || (typeof g.equipo_visitante === 'string' ? g.equipo_visitante : '') || '';
 
-        const logoLocal = g.equipo_local?.logo_url || g.equipo_local?.logo || g.logo_local || g.home_team_logo || g.home_logo || teamLogoMap[homeName.toLowerCase().trim()] || teamLogoMap[g.id_local?.toLowerCase()?.trim()] || '';
-        const logoVisitante = g.equipo_visitante?.logo_url || g.equipo_visitante?.logo || g.logo_visitante || g.away_team_logo || g.away_logo || teamLogoMap[awayName.toLowerCase().trim()] || teamLogoMap[g.id_visitante?.toLowerCase()?.trim()] || '';
+      const logoLocal = g.equipo_local?.logo_url || g.equipo_local?.logo || g.logo_local || g.home_team_logo || g.home_logo || teamLogoMap[homeName.toLowerCase().trim()] || teamLogoMap[g.id_local?.toLowerCase()?.trim()] || '';
+      const logoVisitante = g.equipo_visitante?.logo_url || g.equipo_visitante?.logo || g.logo_visitante || g.away_team_logo || g.away_logo || teamLogoMap[awayName.toLowerCase().trim()] || teamLogoMap[g.id_visitante?.toLowerCase()?.trim()] || '';
 
-        return {
-          id: g.id.replace(`${disciplineId}_`, ''),
-          homeTeam: homeName,
-          awayTeam: awayName,
-          homeScore: g.home_score !== undefined ? g.home_score : (g.marcador_local || 0),
-          awayScore: g.away_score !== undefined ? g.away_score : (g.marcador_visitante || 0),
-          homeQuarters: g.home_quarters || g.cuartos_local || [0, 0, 0, 0],
-          awayQuarters: g.away_quarters || g.cuartos_visitante || [0, 0, 0, 0],
-          currentQuarter: g.current_quarter || 1,
-          date: g.date || g.fecha || '',
-          time: g.time || g.hora || '',
-          location: g.location || g.lugar || '',
-          phase: g.phase || '',
-          status: g.status || g.estado || 'Programado',
-          equipo_local: g.equipo_local || { id: g.id_local || '', name: homeName, logo_url: logoLocal, logo: logoLocal },
-          equipo_visitante: g.equipo_visitante || { id: g.id_visitante || '', name: awayName, logo_url: logoVisitante, logo: logoVisitante },
-          logo_local: logoLocal,
-          logo_visitante: logoVisitante,
-          homeTeamLogo: logoLocal,
-          awayTeamLogo: logoVisitante,
-        };
-      });
+      const homeQuarters = Array.isArray(g.home_quarters) && g.home_quarters.length === 4
+        ? g.home_quarters
+        : Array.isArray(g.cuartos_local) && g.cuartos_local.length === 4
+        ? g.cuartos_local
+        : (g.q1_local !== undefined || g.q2_local !== undefined || g.q3_local !== undefined || g.q4_local !== undefined)
+        ? [Number(g.q1_local || 0), Number(g.q2_local || 0), Number(g.q3_local || 0), Number(g.q4_local || 0)]
+        : [0, 0, 0, 0];
 
-      return { teams, games };
-    }
+      const awayQuarters = Array.isArray(g.away_quarters) && g.away_quarters.length === 4
+        ? g.away_quarters
+        : Array.isArray(g.cuartos_visitante) && g.cuartos_visitante.length === 4
+        ? g.cuartos_visitante
+        : (g.q1_vis !== undefined || g.q2_vis !== undefined || g.q3_vis !== undefined || g.q4_vis !== undefined)
+        ? [Number(g.q1_vis || 0), Number(g.q2_vis || 0), Number(g.q3_vis || 0), Number(g.q4_vis || 0)]
+        : [0, 0, 0, 0];
+
+      return {
+        id: g.id.replace(`${disciplineId}_`, ''),
+        homeTeam: homeName,
+        awayTeam: awayName,
+        homeScore: g.home_score !== undefined ? g.home_score : (g.marcador_local !== undefined ? g.marcador_local : 0),
+        awayScore: g.away_score !== undefined ? g.away_score : (g.marcador_visitante !== undefined ? g.marcador_visitante : 0),
+        homeQuarters,
+        awayQuarters,
+        currentQuarter: g.current_quarter || 1,
+        date: g.date || g.fecha || '',
+        time: g.time || g.hora || '',
+        location: g.location || g.lugar || '',
+        phase: g.phase || '',
+        status: g.status || g.estado || 'Programado',
+        equipo_local: g.equipo_local || { id: g.id_local || '', name: homeName, logo_url: logoLocal, logo: logoLocal },
+        equipo_visitante: g.equipo_visitante || { id: g.id_visitante || '', name: awayName, logo_url: logoVisitante, logo: logoVisitante },
+        logo_local: logoLocal,
+        logo_visitante: logoVisitante,
+        homeTeamLogo: logoLocal,
+        awayTeamLogo: logoVisitante,
+      };
+    });
+
+    return { teams, games };
   } catch (e) {
     console.warn('[Supabase] Error en fetchSupabaseDirectData:', e);
   }

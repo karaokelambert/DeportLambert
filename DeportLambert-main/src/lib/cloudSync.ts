@@ -25,7 +25,13 @@ export interface CloudTournamentState {
   registeredAdmins?: any;
 }
 
-const PRIMARY_STORAGE_KEY = 'jl360_cloud_state_v5';
+// Persistencia local eliminada: Supabase es la ÚNICA fuente de verdad.
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('jl360_cloud_state_v5');
+  } catch (e) {}
+}
+
 const CONFIG_KEY = 'jl360_sync_config_v5';
 
 export interface SyncConfig {
@@ -68,19 +74,17 @@ export function saveSyncConfig(config: Partial<SyncConfig>): void {
 }
 
 export function getLocalState(): CloudTournamentState | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(PRIMARY_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
+  // NUNCA devolver datos cacheados de localStorage; Supabase es la fuente única
   return null;
 }
 
-export function saveLocalState(state: CloudTournamentState): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(PRIMARY_STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {}
+export function saveLocalState(_state: CloudTournamentState): void {
+  // No-op: no guardar marcadores en localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('jl360_cloud_state_v5');
+    } catch (e) {}
+  }
 }
 
 const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window

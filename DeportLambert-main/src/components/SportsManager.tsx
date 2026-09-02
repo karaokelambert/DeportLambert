@@ -364,45 +364,31 @@ export default function SportsManager() {
           localVersionRef.current = Math.max(remote.version || 1, localVersionRef.current);
           localUpdatedAtRef.current = remote.updatedAt || Date.now();
           setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
-          saveLocalState(remote);
-        } else {
-          // 2. Solo si no hay conexión a Supabase se cargan datos locales de rescate
-          const local = getLocalState();
-          if (local && local.disciplineData && Object.keys(local.disciplineData).length > 0) {
-            disciplineDataRef.current = local.disciplineData;
-            setDisciplineData(local.disciplineData);
-            if (local.disciplinesList) {
-              disciplinesListRef.current = local.disciplinesList;
-              setDisciplinesList(local.disciplinesList);
-            }
-            if (local.branding) {
-              brandingRef.current = local.branding;
-              setBranding(local.branding);
-            }
-            if (local.registeredAdmins) {
-              adminsRef.current = local.registeredAdmins;
-              setRegisteredAdmins(local.registeredAdmins);
-            }
-            if (local.version) localVersionRef.current = local.version;
-            if (local.updatedAt) localUpdatedAtRef.current = local.updatedAt;
-          }
         }
 
-        // 3. Cargar directamente los logos de equipos y partidos de la tabla Supabase
+        // 2. Cargar directamente los logos de equipos y partidos autoritativos de la tabla Supabase ('partidos' y 'equipos')
         const directData = await fetchSupabaseDirectData(currentDiscKey);
-        if (directData && directData.teams && directData.teams.length > 0) {
+        if (directData) {
           setDisciplineData(prev => {
             const disc = prev[currentDiscKey] || defaultForCurrentDisc;
-            const updatedTeams = disc.teams.map(t => {
-              const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
-              const resolvedLogo = (matched && matched.logoUrl) ? matched.logoUrl : t.logoUrl;
-              return matched ? { ...t, ...matched, logoUrl: resolvedLogo } : t;
-            });
+            const updatedTeams = (directData.teams && directData.teams.length > 0)
+              ? disc.teams.map(t => {
+                  const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
+                  const resolvedLogo = (matched && matched.logoUrl) ? matched.logoUrl : t.logoUrl;
+                  return matched ? { ...t, ...matched, logoUrl: resolvedLogo } : t;
+                })
+              : disc.teams;
+
+            const updatedGames = (directData.games && directData.games.length > 0)
+              ? directData.games
+              : disc.games;
+
             const nextState = {
               ...prev,
               [currentDiscKey]: {
                 ...disc,
                 teams: updatedTeams,
+                games: updatedGames,
               }
             };
             disciplineDataRef.current = nextState;
@@ -451,6 +437,23 @@ export default function SportsManager() {
           return rt;
         });
       }
+
+      // Merge de partidos: preservar marcadores y cuartos actualizados en vivo si el remoto viene con defaults
+      if (localDisc?.games && remoteDisc?.games) {
+        remoteDisc.games = remoteDisc.games.map((rg: Game) => {
+          const lg = localDisc.games.find((g: Game) => g.id === rg.id);
+          if (lg) {
+            return {
+              ...rg,
+              homeTeamLogo: rg.homeTeamLogo || (rg as any).logo_local || (lg as any).homeTeamLogo || (lg as any).logo_local,
+              awayTeamLogo: rg.awayTeamLogo || (rg as any).logo_visitante || (lg as any).awayTeamLogo || (lg as any).logo_visitante,
+              homeQuarters: Array.isArray(rg.homeQuarters) && rg.homeQuarters.some(q => q > 0) ? rg.homeQuarters : (lg.homeQuarters || rg.homeQuarters),
+              awayQuarters: Array.isArray(rg.awayQuarters) && rg.awayQuarters.some(q => q > 0) ? rg.awayQuarters : (lg.awayQuarters || rg.awayQuarters),
+            };
+          }
+          return rg;
+        });
+      }
     });
 
     // Merge de disciplinas: conservar customLogoUrl si existe localmente
@@ -483,14 +486,6 @@ export default function SportsManager() {
     localUpdatedAtRef.current = Math.max(remoteUpdated, localUpdatedAtRef.current, Date.now());
     setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
     setSyncStatus('synced');
-    saveLocalState({
-      version: localVersionRef.current,
-      updatedAt: localUpdatedAtRef.current,
-      disciplineData: mergedDisciplineData,
-      disciplinesList: mergedDisciplinesList,
-      branding: remote.branding,
-      registeredAdmins: remote.registeredAdmins,
-    });
   }, []);
 
   // Suscripción Realtime directa para partidos y equipos con canal de Broadcast ultra-rápido (< 0.5s)
@@ -561,14 +556,33 @@ export default function SportsManager() {
             const discState = prev[disc] || defaultForCurrentDisc;
             const gamesList: Game[] = discState.games || [];
             
+            const homeScore = n.home_score !== undefined ? Number(n.home_score) : (n.marcador_local !== undefined ? Number(n.marcador_local) : undefined);
+            const awayScore = n.away_score !== undefined ? Number(n.away_score) : (n.marcador_visitante !== undefined ? Number(n.marcador_visitante) : undefined);
+
+            const parsedHomeQuarters = Array.isArray(n.home_quarters) && n.home_quarters.length === 4
+              ? n.home_quarters
+              : Array.isArray(n.cuartos_local) && n.cuartos_local.length === 4
+              ? n.cuartos_local
+              : (n.q1_local !== undefined || n.q2_local !== undefined || n.q3_local !== undefined || n.q4_local !== undefined)
+              ? [Number(n.q1_local || 0), Number(n.q2_local || 0), Number(n.q3_local || 0), Number(n.q4_local || 0)]
+              : undefined;
+
+            const parsedAwayQuarters = Array.isArray(n.away_quarters) && n.away_quarters.length === 4
+              ? n.away_quarters
+              : Array.isArray(n.cuartos_visitante) && n.cuartos_visitante.length === 4
+              ? n.cuartos_visitante
+              : (n.q1_vis !== undefined || n.q2_vis !== undefined || n.q3_vis !== undefined || n.q4_vis !== undefined)
+              ? [Number(n.q1_vis || 0), Number(n.q2_vis || 0), Number(n.q3_vis || 0), Number(n.q4_vis || 0)]
+              : undefined;
+
             const updated = gamesList.map(g => {
               if (g.id === cleanId || `${disc}_${g.id}` === n.id || g.id === n.id) {
                 return {
                   ...g,
-                  homeScore: n.home_score !== undefined ? Number(n.home_score) : (n.marcador_local !== undefined ? Number(n.marcador_local) : g.homeScore),
-                  awayScore: n.away_score !== undefined ? Number(n.away_score) : (n.marcador_visitante !== undefined ? Number(n.marcador_visitante) : g.awayScore),
-                  homeQuarters: n.home_quarters || n.cuartos_local || g.homeQuarters,
-                  awayQuarters: n.away_quarters || n.cuartos_visitante || g.awayQuarters,
+                  homeScore: homeScore !== undefined ? homeScore : g.homeScore,
+                  awayScore: awayScore !== undefined ? awayScore : g.awayScore,
+                  homeQuarters: parsedHomeQuarters !== undefined ? parsedHomeQuarters : g.homeQuarters,
+                  awayQuarters: parsedAwayQuarters !== undefined ? parsedAwayQuarters : g.awayQuarters,
                   status: n.status || n.estado || g.status,
                   currentQuarter: n.current_quarter || g.currentQuarter,
                   equipo_local: n.equipo_local || g.equipo_local,
@@ -1039,23 +1053,20 @@ export default function SportsManager() {
   };
 
   // ── Handlers de datos con Auditoría en Tiempo Real y Persistencia Directa ──
-  const updateGame = useCallback((gameId: string, updates: Partial<Game>) => {
-    setGames(prev => {
-      const target = prev.find(g => g.id === gameId);
-      const merged = target ? { ...target, ...updates } : ({ id: gameId, ...updates } as Game);
-      
-      // Guardado directo asíncrono en Supabase
-      updateSingleGameInSupabase(currentDiscKey, merged).then(res => {
-        if (res.ok) {
-          console.log('[Supabase Direct] Partido guardado en BD con éxito status 200');
-        }
-      });
-
-      return prev.map(g => (g.id === gameId ? { ...g, ...updates } : g));
-    });
-
+  const updateGame = useCallback(async (gameId: string, updates: Partial<Game>) => {
     const targetGame = currentGames.find(g => g.id === gameId);
     const merged = targetGame ? { ...targetGame, ...updates } : ({ id: gameId, ...updates } as Game);
+
+    // Guardado directo asíncrono en Supabase
+    const res = await updateSingleGameInSupabase(currentDiscKey, merged);
+    if (!res.ok) {
+      const errMsg = res.error?.message || 'Error al persistir partido en Supabase (RLS o fallo de conexión)';
+      console.error('[Supabase Direct] Error guardando partido:', res.error);
+      alert(`❌ Error al persistir cambios en Supabase: ${errMsg}`);
+      return;
+    }
+
+    setGames(prev => prev.map(g => (g.id === gameId ? { ...g, ...updates } : g)));
 
     // Disparo de notificación y auditoría al finalizar partido
     if (updates.status === 'Finalizado' && targetGame?.status !== 'Finalizado') {
@@ -4078,31 +4089,26 @@ function CompactMatchCard({
       awayQuarters: awayQ,
       status: status,
     };
-    onUpdateGame(game.id, updates);
 
     const disc = (game as any).discipline || 'baloncesto';
-
-    // 1. Emisión instantánea por Broadcast WebSocket (< 0.5s)
-    broadcastScoreUpdate(disc, {
-      gameId: game.id,
-      id: game.id,
-      homeTeam: game.homeTeam,
-      awayTeam: game.awayTeam,
-      homeScore: totalHome,
-      awayScore: totalAway,
-      homeQuarters: homeQ,
-      awayQuarters: awayQ,
-      status: status,
-      discipline: disc,
-    });
     
     try {
+      // 1. Petición asíncrona real contra la tabla 'partidos' de Supabase
       const res = await updateSingleGameInSupabase(disc, { ...game, ...updates });
+      
+      if (!res.ok) {
+        const errMsg = res.error?.message || (typeof res.error === 'string' ? res.error : 'Fallo de permisos RLS o de conexión con Supabase.');
+        alert(`❌ Error al persistir en Supabase: ${errMsg}\n\nLos cambios NO se guardaron en la base de datos.`);
+        setIsSaving(false);
+        return;
+      }
+
+      // 2. Solo al confirmarse en el servidor, actualizamos React
+      onUpdateGame(game.id, updates);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
-    } catch {
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (err: any) {
+      alert(`❌ Error de conexión al guardar: ${err?.message || err}`);
     } finally {
       setIsSaving(false);
     }
