@@ -331,6 +331,27 @@ export default function SportsManager() {
   const isLocallyMutatingRef = useRef<boolean>(false);
   const localMutationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Rastro de partidos que están siendo editados localmente en pantalla para suspender Realtime
+  const activelyEditingGamesRef = useRef<Set<string>>(new Set());
+
+  const startEditingGame = useCallback((id: string) => {
+    if (!id) return;
+    activelyEditingGamesRef.current.add(id);
+    const clean = id.replace(/^[a-z0-9]+_/, '');
+    activelyEditingGamesRef.current.add(clean);
+    isLocallyMutatingRef.current = true;
+  }, []);
+
+  const stopEditingGame = useCallback((id: string) => {
+    if (!id) return;
+    activelyEditingGamesRef.current.delete(id);
+    const clean = id.replace(/^[a-z0-9]+_/, '');
+    activelyEditingGamesRef.current.delete(clean);
+    if (activelyEditingGamesRef.current.size === 0) {
+      isLocallyMutatingRef.current = false;
+    }
+  }, []);
+
   const disciplineDataRef = useRef(disciplineData);
   disciplineDataRef.current = disciplineData;
   const disciplinesListRef = useRef(disciplinesList);
@@ -443,10 +464,16 @@ export default function SportsManager() {
         remoteDisc.games = remoteDisc.games.map((rg: Game) => {
           const lg = localDisc.games.find((g: Game) => g.id === rg.id);
           if (lg) {
+            const isBeingEdited = activelyEditingGamesRef.current.has(rg.id) || activelyEditingGamesRef.current.has(`${discKey}_${rg.id}`);
+            if (isBeingEdited) {
+              return lg; // Preservar intacto el partido en edición local
+            }
             return {
               ...rg,
               homeTeamLogo: rg.homeTeamLogo || (rg as any).logo_local || (lg as any).homeTeamLogo || (lg as any).logo_local,
               awayTeamLogo: rg.awayTeamLogo || (rg as any).logo_visitante || (lg as any).awayTeamLogo || (lg as any).logo_visitante,
+              homeScore: lg.homeScore !== undefined && rg.homeScore === 0 ? lg.homeScore : rg.homeScore,
+              awayScore: lg.awayScore !== undefined && rg.awayScore === 0 ? lg.awayScore : rg.awayScore,
               homeQuarters: Array.isArray(rg.homeQuarters) && rg.homeQuarters.some(q => q > 0) ? rg.homeQuarters : (lg.homeQuarters || rg.homeQuarters),
               awayQuarters: Array.isArray(rg.awayQuarters) && rg.awayQuarters.some(q => q > 0) ? rg.awayQuarters : (lg.awayQuarters || rg.awayQuarters),
             };
@@ -504,9 +531,16 @@ export default function SportsManager() {
       })
       .on('broadcast', { event: 'score-update' }, ({ payload }: any) => {
         if (payload && (payload.gameId || payload.id)) {
-          console.log('[Realtime Broadcast] Recibido score-update sub-segundo:', payload);
           const rawId = String(payload.gameId || payload.id);
           const cleanId = rawId.replace(/^[a-z0-9]+_/, '');
+          
+          // Suspender Realtime para partidos que están siendo editados en este cliente
+          if (activelyEditingGamesRef.current.has(cleanId) || activelyEditingGamesRef.current.has(rawId)) {
+            console.log('[Realtime Broadcast] Ignorando evento para partido en edición local:', cleanId);
+            return;
+          }
+
+          console.log('[Realtime Broadcast] Recibido score-update sub-segundo:', payload);
           
           setDisciplineData(prev => {
             const disc = payload.discipline || currentDiscKey;
@@ -550,6 +584,13 @@ export default function SportsManager() {
         if (payload && payload.new) {
           const n = payload.new;
           const cleanId = (n.id || '').replace(/^[a-z0-9]+_/, '');
+          const rawId = String(n.id || '');
+
+          // Suspender Realtime para partidos que están siendo editados en este cliente
+          if (activelyEditingGamesRef.current.has(cleanId) || activelyEditingGamesRef.current.has(rawId)) {
+            console.log('[Realtime Postgres] Ignorando evento para partido en edición local:', cleanId);
+            return;
+          }
           
           setDisciplineData(prev => {
             const disc = n.discipline || currentDiscKey;
@@ -1057,28 +1098,34 @@ export default function SportsManager() {
     const targetGame = currentGames.find(g => g.id === gameId);
     const merged = targetGame ? { ...targetGame, ...updates } : ({ id: gameId, ...updates } as Game);
 
-    // Guardado directo asíncrono en Supabase
-    const res = await updateSingleGameInSupabase(currentDiscKey, merged);
-    if (!res.ok) {
-      const errMsg = res.error?.message || 'Error al persistir partido en Supabase (RLS o fallo de conexión)';
-      console.error('[Supabase Direct] Error guardando partido:', res.error);
-      alert(`❌ Error al persistir cambios en Supabase: ${errMsg}`);
-      return;
-    }
+    try {
+      // Guardado directo asíncrono en Supabase
+      const res = await updateSingleGameInSupabase(currentDiscKey, merged);
+      if (!res.ok) {
+        const errMsg = res.error?.message || (typeof res.error === 'string' ? res.error : 'Fallo de permisos RLS o de conexión con Supabase.');
+        console.error("Error al guardar en Supabase:", res.error);
+        alert("Error de guardado en Supabase: " + errMsg);
+        return;
+      }
 
-    setGames(prev => prev.map(g => (g.id === gameId ? { ...g, ...updates } : g)));
+      setGames(prev => prev.map(g => (g.id === gameId ? { ...g, ...updates } : g)));
+      stopEditingGame(gameId);
 
-    // Disparo de notificación y auditoría al finalizar partido
-    if (updates.status === 'Finalizado' && targetGame?.status !== 'Finalizado') {
-      const hs = updates.homeScore ?? merged.homeScore;
-      const as = updates.awayScore ?? merged.awayScore;
-      const body = `Finalizó: ${merged.homeTeam} ${hs} – ${as} ${merged.awayTeam}`;
-      triggerNotification(`⏱ Partido Finalizado · ${selectedDiscipline?.title || branding.title}`, body, gameId);
-      addAuditLog(`Marcador Final Guardado: ${merged.homeTeam} ${hs} - ${as} ${merged.awayTeam}`, 'score');
-    } else if (updates.homeScore !== undefined || updates.awayScore !== undefined) {
-      addAuditLog(`Actualización en vivo: ${merged.homeTeam} vs ${merged.awayTeam}`, 'score');
+      // Disparo de notificación y auditoría al finalizar partido
+      if (updates.status === 'Finalizado' && targetGame?.status !== 'Finalizado') {
+        const hs = updates.homeScore ?? merged.homeScore;
+        const as = updates.awayScore ?? merged.awayScore;
+        const body = `Finalizó: ${merged.homeTeam} ${hs} – ${as} ${merged.awayTeam}`;
+        triggerNotification(`⏱ Partido Finalizado · ${selectedDiscipline?.title || branding.title}`, body, gameId);
+        addAuditLog(`Marcador Final Guardado: ${merged.homeTeam} ${hs} - ${as} ${merged.awayTeam}`, 'score');
+      } else if (updates.homeScore !== undefined || updates.awayScore !== undefined) {
+        addAuditLog(`Actualización en vivo: ${merged.homeTeam} vs ${merged.awayTeam}`, 'score');
+      }
+    } catch (err: any) {
+      console.error("Error al guardar en Supabase:", err);
+      alert("Error de guardado en Supabase: " + (err?.message || err));
     }
-  }, [currentGames, currentDiscKey, selectedDiscipline, branding.title, triggerNotification, addAuditLog]);
+  }, [currentGames, currentDiscKey, selectedDiscipline, branding.title, triggerNotification, addAuditLog, stopEditingGame]);
 
   const handleAddGame = (newGame: Omit<Game, 'id'>) => {
     const id = Date.now().toString();
@@ -1850,7 +1897,7 @@ export default function SportsManager() {
             />
           )}
           {activeTab === 'calendario'      && <CalendarView role={role} games={currentGames} teams={currentTeams} tournamentFormat={tournamentFormat} onAddGame={handleAddGame} onUpdateGame={updateGame} onDeleteGame={handleDeleteGame} onGoToLive={() => setActiveTab('live-results')} />}
-          {activeTab === 'live-results'    && <LiveResultsView role={role} games={currentGames} teams={currentTeams} onUpdateGame={updateGame} disciplineTitle={selectedDiscipline.title} />}
+          {activeTab === 'live-results'    && <LiveResultsView role={role} games={currentGames} teams={currentTeams} onUpdateGame={updateGame} disciplineTitle={selectedDiscipline.title} currentDiscKey={currentDiscKey} onStartEditing={startEditingGame} onStopEditing={stopEditingGame} />}
           {activeTab === 'posiciones'      && <StandingsView standingsByGroup={standingsByGroup} tournamentFormat={tournamentFormat} />}
           {activeTab === 'seguridad'       && <SecurityView auditLogs={auditLogs} onClearLogs={() => setAuditLogs([])} />}
         </main>
@@ -3945,13 +3992,16 @@ function CalendarView({
 
 // ── 5. LiveResultsView (Resultados Live Multi-Partido & Carga Directa Q1-Q4) ──
 function LiveResultsView({
-  role, games, teams, onUpdateGame, disciplineTitle
+  role, games, teams, onUpdateGame, disciplineTitle, currentDiscKey, onStartEditing, onStopEditing
 }: {
   role: Role,
   games: Game[],
   teams: Team[],
   onUpdateGame: (id: string, updates: Partial<Game>) => void,
   disciplineTitle: string,
+  currentDiscKey?: string,
+  onStartEditing?: (id: string) => void,
+  onStopEditing?: (id: string) => void,
 }) {
   const [filter, setFilter] = useState<'TODOS' | 'En Curso' | 'Programado' | 'Finalizado'>('TODOS');
 
@@ -4021,6 +4071,9 @@ function LiveResultsView({
               teams={teams}
               role={role}
               onUpdateGame={onUpdateGame}
+              currentDiscKey={currentDiscKey}
+              onStartEditing={onStartEditing}
+              onStopEditing={onStopEditing}
             />
           ))}
         </div>
@@ -4038,33 +4091,53 @@ function CompactMatchCard({
   game,
   teams,
   role,
-  onUpdateGame
+  onUpdateGame,
+  currentDiscKey,
+  onStartEditing,
+  onStopEditing,
 }: {
   game: Game;
   teams: Team[];
   role: Role;
   onUpdateGame: (id: string, updates: Partial<Game>) => void;
+  currentDiscKey?: string;
+  onStartEditing?: (id: string) => void;
+  onStopEditing?: (id: string) => void;
 }) {
-  const [homeQ, setHomeQ] = useState<number[]>(game.homeQuarters || [0, 0, 0, 0]);
-  const [awayQ, setAwayQ] = useState<number[]>(game.awayQuarters || [0, 0, 0, 0]);
+  const [homeQ, setHomeQ] = useState<number[]>(() =>
+    Array.isArray(game.homeQuarters) && game.homeQuarters.length === 4 ? game.homeQuarters : [0, 0, 0, 0]
+  );
+  const [awayQ, setAwayQ] = useState<number[]>(() =>
+    Array.isArray(game.awayQuarters) && game.awayQuarters.length === 4 ? game.awayQuarters : [0, 0, 0, 0]
+  );
   const [status, setStatus] = useState<'Programado' | 'En Curso' | 'Finalizado'>(game.status || 'Programado');
+  const [isDirty, setIsDirty] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Sincronizar con props solo cuando el usuario NO esté editando y NO esté guardando
   useEffect(() => {
-    setHomeQ(game.homeQuarters || [0, 0, 0, 0]);
-    setAwayQ(game.awayQuarters || [0, 0, 0, 0]);
-    setStatus(game.status || 'Programado');
-  }, [game]);
+    if (!isDirty && !isSaving) {
+      if (Array.isArray(game.homeQuarters) && game.homeQuarters.length === 4) {
+        setHomeQ(game.homeQuarters);
+      }
+      if (Array.isArray(game.awayQuarters) && game.awayQuarters.length === 4) {
+        setAwayQ(game.awayQuarters);
+      }
+      if (game.status) {
+        setStatus(game.status);
+      }
+    }
+  }, [game.homeQuarters, game.awayQuarters, game.status, isDirty, isSaving]);
 
   const totalHome = homeQ.reduce((a, b) => a + Number(b || 0), 0);
   const totalAway = awayQ.reduce((a, b) => a + Number(b || 0), 0);
 
-  const homeLogo = teams.find(t => t.name === game.homeTeam)?.logoUrl;
-  const awayLogo = teams.find(t => t.name === game.awayTeam)?.logoUrl;
-
-  const handleScoreChange = (teamId: 'home' | 'away', quarterIndex: number, val: number) => {
-    const safeVal = Math.max(0, isNaN(val) ? 0 : val);
+  const handleScoreChange = (teamId: 'home' | 'away', quarterIndex: number, rawVal: string) => {
+    setIsDirty(true);
+    onStartEditing?.(game.id);
+    const parsed = parseInt(rawVal, 10);
+    const safeVal = isNaN(parsed) ? 0 : Math.max(0, parsed);
     if (teamId === 'home') {
       setHomeQ(prev => {
         const next = [...prev];
@@ -4080,6 +4153,12 @@ function CompactMatchCard({
     }
   };
 
+  const handleStatusChange = (newStatus: 'Programado' | 'En Curso' | 'Finalizado') => {
+    setIsDirty(true);
+    onStartEditing?.(game.id);
+    setStatus(newStatus);
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     const updates: Partial<Game> = {
@@ -4090,25 +4169,29 @@ function CompactMatchCard({
       status: status,
     };
 
-    const disc = (game as any).discipline || 'baloncesto';
+    const disc = (game as any).discipline || currentDiscKey || 'baloncesto';
     
     try {
       // 1. Petición asíncrona real contra la tabla 'partidos' de Supabase
       const res = await updateSingleGameInSupabase(disc, { ...game, ...updates });
       
       if (!res.ok) {
+        console.error("Error al guardar en Supabase:", res.error);
         const errMsg = res.error?.message || (typeof res.error === 'string' ? res.error : 'Fallo de permisos RLS o de conexión con Supabase.');
-        alert(`❌ Error al persistir en Supabase: ${errMsg}\n\nLos cambios NO se guardaron en la base de datos.`);
+        alert("Error de guardado en Supabase: " + errMsg);
         setIsSaving(false);
         return;
       }
 
-      // 2. Solo al confirmarse en el servidor, actualizamos React
+      // 2. Al confirmarse en el servidor, actualizamos React y liberamos la edición
       onUpdateGame(game.id, updates);
+      setIsDirty(false);
+      onStopEditing?.(game.id);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
     } catch (err: any) {
-      alert(`❌ Error de conexión al guardar: ${err?.message || err}`);
+      console.error("Error al guardar en Supabase:", err);
+      alert("Error de guardado en Supabase: " + (err?.message || err));
     } finally {
       setIsSaving(false);
     }
@@ -4208,10 +4291,14 @@ function CompactMatchCard({
               <input
                 type="number"
                 min="0"
-                disabled={role !== 'ADMIN'}
-                className="w-full text-center bg-slate-900 text-white font-bold text-sm py-1 px-1 rounded border border-amber-500/40 focus:outline-none focus:border-amber-400 mt-1"
-                value={homeQ[index] || 0}
-                onChange={(e) => handleScoreChange('home', index, parseInt(e.target.value) || 0)}
+                disabled={role !== 'ADMIN' || isSaving}
+                className="w-full text-center bg-slate-900 text-white font-bold text-sm py-1 px-1 rounded border border-amber-500/40 focus:outline-none focus:border-amber-400 mt-1 disabled:opacity-60"
+                value={homeQ[index] !== undefined ? homeQ[index] : 0}
+                onChange={(e) => handleScoreChange('home', index, e.target.value)}
+                onFocus={() => {
+                  setIsDirty(true);
+                  onStartEditing?.(game.id);
+                }}
               />
             </div>
           ))}
@@ -4228,10 +4315,14 @@ function CompactMatchCard({
               <input
                 type="number"
                 min="0"
-                disabled={role !== 'ADMIN'}
-                className="w-full text-center bg-slate-900 text-white font-bold text-sm py-1 px-1 rounded border border-cyan-500/40 focus:outline-none focus:border-cyan-400 mt-1"
-                value={awayQ[index] || 0}
-                onChange={(e) => handleScoreChange('away', index, parseInt(e.target.value) || 0)}
+                disabled={role !== 'ADMIN' || isSaving}
+                className="w-full text-center bg-slate-900 text-white font-bold text-sm py-1 px-1 rounded border border-cyan-500/40 focus:outline-none focus:border-cyan-400 mt-1 disabled:opacity-60"
+                value={awayQ[index] !== undefined ? awayQ[index] : 0}
+                onChange={(e) => handleScoreChange('away', index, e.target.value)}
+                onFocus={() => {
+                  setIsDirty(true);
+                  onStartEditing?.(game.id);
+                }}
               />
             </div>
           ))}
@@ -4245,8 +4336,9 @@ function CompactMatchCard({
             <span className="text-[8px] font-black uppercase text-slate-400">Estado:</span>
             <select
               value={status}
-              onChange={e => setStatus(e.target.value as any)}
-              className="bg-slate-950 border border-slate-700 text-white text-[9px] font-bold uppercase rounded px-1.5 py-0.5 outline-none cursor-pointer"
+              disabled={isSaving}
+              onChange={e => handleStatusChange(e.target.value as any)}
+              className="bg-slate-950 border border-slate-700 text-white text-[9px] font-bold uppercase rounded px-1.5 py-0.5 outline-none cursor-pointer disabled:opacity-60"
             >
               <option value="En Curso">En Curso (Live)</option>
               <option value="Finalizado">Finalizado</option>

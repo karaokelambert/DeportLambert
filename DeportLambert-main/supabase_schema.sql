@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_jugadores_discipline ON public.jugadores(discipli
 
 -- ==============================================================================
 -- Políticas de Seguridad RLS (Row Level Security)
--- Permitir lectura y escritura pública para tiempo real instantáneo
+-- Permitir lectura y escritura/actualización pública para tiempo real instantáneo
 -- ==============================================================================
 
 ALTER TABLE public.equipos ENABLE ROW LEVEL SECURITY;
@@ -94,30 +94,55 @@ ALTER TABLE public.posiciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jugadores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_sync ENABLE ROW LEVEL SECURITY;
 
+-- 1. Políticas para Equipos
 DROP POLICY IF EXISTS "Lectura pública de equipos" ON public.equipos;
 DROP POLICY IF EXISTS "Escritura pública de equipos" ON public.equipos;
+DROP POLICY IF EXISTS "Actualización pública de equipos" ON public.equipos;
+DROP POLICY IF EXISTS "Inserción pública de equipos" ON public.equipos;
 CREATE POLICY "Lectura pública de equipos" ON public.equipos FOR SELECT USING (true);
-CREATE POLICY "Escritura pública de equipos" ON public.equipos FOR ALL USING (true);
+CREATE POLICY "Escritura pública de equipos" ON public.equipos FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Actualización pública de equipos" ON public.equipos FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Inserción pública de equipos" ON public.equipos FOR INSERT TO anon, authenticated WITH CHECK (true);
 
+-- 2. Políticas para Partidos (UPDATE / INSERT / SELECT / ALL)
 DROP POLICY IF EXISTS "Lectura pública de partidos" ON public.partidos;
 DROP POLICY IF EXISTS "Escritura pública de partidos" ON public.partidos;
+DROP POLICY IF EXISTS "Actualización pública de partidos" ON public.partidos;
+DROP POLICY IF EXISTS "Inserción pública de partidos" ON public.partidos;
 CREATE POLICY "Lectura pública de partidos" ON public.partidos FOR SELECT USING (true);
-CREATE POLICY "Escritura pública de partidos" ON public.partidos FOR ALL USING (true);
+CREATE POLICY "Escritura pública de partidos" ON public.partidos FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Actualización pública de partidos" ON public.partidos FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Inserción pública de partidos" ON public.partidos FOR INSERT TO anon, authenticated WITH CHECK (true);
 
+-- 3. Políticas para Posiciones
 DROP POLICY IF EXISTS "Lectura pública de posiciones" ON public.posiciones;
 DROP POLICY IF EXISTS "Escritura pública de posiciones" ON public.posiciones;
+DROP POLICY IF EXISTS "Actualización pública de posiciones" ON public.posiciones;
+DROP POLICY IF EXISTS "Inserción pública de posiciones" ON public.posiciones;
 CREATE POLICY "Lectura pública de posiciones" ON public.posiciones FOR SELECT USING (true);
-CREATE POLICY "Escritura pública de posiciones" ON public.posiciones FOR ALL USING (true);
+CREATE POLICY "Escritura pública de posiciones" ON public.posiciones FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Actualización pública de posiciones" ON public.posiciones FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Inserción pública de posiciones" ON public.posiciones FOR INSERT TO anon, authenticated WITH CHECK (true);
 
+-- 4. Políticas para Jugadores
 DROP POLICY IF EXISTS "Lectura pública de jugadores" ON public.jugadores;
 DROP POLICY IF EXISTS "Escritura pública de jugadores" ON public.jugadores;
+DROP POLICY IF EXISTS "Actualización pública de jugadores" ON public.jugadores;
+DROP POLICY IF EXISTS "Inserción pública de jugadores" ON public.jugadores;
 CREATE POLICY "Lectura pública de jugadores" ON public.jugadores FOR SELECT USING (true);
-CREATE POLICY "Escritura pública de jugadores" ON public.jugadores FOR ALL USING (true);
+CREATE POLICY "Escritura pública de jugadores" ON public.jugadores FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Actualización pública de jugadores" ON public.jugadores FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Inserción pública de jugadores" ON public.jugadores FOR INSERT TO anon, authenticated WITH CHECK (true);
 
+-- 5. Políticas para Tournament Sync
 DROP POLICY IF EXISTS "Lectura pública de sync" ON public.tournament_sync;
 DROP POLICY IF EXISTS "Escritura pública de sync" ON public.tournament_sync;
+DROP POLICY IF EXISTS "Actualización pública de sync" ON public.tournament_sync;
+DROP POLICY IF EXISTS "Inserción pública de sync" ON public.tournament_sync;
 CREATE POLICY "Lectura pública de sync" ON public.tournament_sync FOR SELECT USING (true);
-CREATE POLICY "Escritura pública de sync" ON public.tournament_sync FOR ALL USING (true);
+CREATE POLICY "Escritura pública de sync" ON public.tournament_sync FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Actualización pública de sync" ON public.tournament_sync FOR UPDATE TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Inserción pública de sync" ON public.tournament_sync FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 -- ==============================================================================
 -- Habilitar Publicación en Tiempo Real (Realtime)

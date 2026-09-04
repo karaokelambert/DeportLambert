@@ -384,7 +384,7 @@ export async function broadcastScoreUpdate(discipline: string, payload: any) {
 /**
  * Actualiza un único partido en Supabase directamente con verificación de respuesta y Broadcast instantáneo
  */
-export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; error?: any }> {
+export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; data?: any; error?: any }> {
   const client = getSupabaseClient();
   if (!client) return { ok: false, error: new Error('No Supabase client initialized') };
   
@@ -399,23 +399,8 @@ export async function updateSingleGameInSupabase(discipline: string, game: any):
   const status = game.status || game.estado || 'Programado';
   const nowIso = new Date().toISOString();
 
-  // 1. Emitir inmediatamente por el canal de Broadcast para sincronización instantánea sub-segundo (< 0.5s)
-  broadcastScoreUpdate(discipline, {
-    gameId: rawId,
-    id: primaryId,
-    homeTeam: game.homeTeam,
-    awayTeam: game.awayTeam,
-    homeScore,
-    awayScore,
-    homeQuarters,
-    awayQuarters,
-    currentQuarter,
-    status,
-    discipline,
-  });
-
   try {
-    // 2. Ejecutar UPDATE asíncrono real en tabla 'partidos'
+    // Ejecutar UPDATE asíncrono real en tabla 'partidos'
     const updateStandard: any = {
       home_score: homeScore,
       away_score: awayScore,
@@ -492,8 +477,8 @@ export async function updateSingleGameInSupabase(discipline: string, game: any):
       const upsertRow: any = {
         id: primaryId,
         discipline,
-        home_team: game.homeTeam,
-        away_team: game.awayTeam,
+        home_team: game.homeTeam || 'Local',
+        away_team: game.awayTeam || 'Visitante',
         home_score: homeScore,
         away_score: awayScore,
         home_quarters: homeQuarters,
@@ -513,19 +498,35 @@ export async function updateSingleGameInSupabase(discipline: string, game: any):
         .select();
 
       if (!upsertRes.error) {
-        console.log('[Supabase Direct] Partido persistido vía upsert:', primaryId);
-        return { ok: true, status: 200 };
+        data = upsertRes.data;
+        error = null;
+      } else {
+        error = upsertRes.error;
       }
-      error = upsertRes.error;
     }
 
     if (error) {
-      console.error('[Supabase Direct] Error al persistir en tabla partidos:', error);
+      console.error("[Supabase Direct] Error al guardar en Supabase:", error);
       return { ok: false, error };
     }
 
+    // Emitir inmediatamente por el canal de Broadcast para sincronización instantánea una vez confirmado el guardado
+    broadcastScoreUpdate(discipline, {
+      gameId: rawId,
+      id: primaryId,
+      homeTeam: game.homeTeam,
+      awayTeam: game.awayTeam,
+      homeScore,
+      awayScore,
+      homeQuarters,
+      awayQuarters,
+      currentQuarter,
+      status,
+      discipline,
+    });
+
     console.log('[Supabase Direct] Partido actualizado exitosamente en BD:', primaryId);
-    return { ok: true, status: 200 };
+    return { ok: true, status: 200, data };
   } catch (err: any) {
     console.error('[Supabase Direct] Excepción al persistir:', err);
     return { ok: false, error: err };
