@@ -66,8 +66,34 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 window.addEventListener('load', function() {
                   navigator.serviceWorker.register('./sw.js').then(function(reg) {
                     console.log('[JL360] Service Worker registrado con scope:', reg.scope);
+                    try { reg.update(); } catch (_) {}
+
+                    if (reg.waiting) {
+                      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+
+                    reg.addEventListener('updatefound', function() {
+                      var newWorker = reg.installing;
+                      if (newWorker) {
+                        newWorker.addEventListener('statechange', function() {
+                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('[JL360] Nuevo Service Worker disponible, activando de inmediato...');
+                            newWorker.postMessage({ type: 'SKIP_WAITING' });
+                          }
+                        });
+                      }
+                    });
                   }).catch(function(err) {
                     console.log('SW error:', err);
+                  });
+
+                  var refreshing = false;
+                  navigator.serviceWorker.addEventListener('controllerchange', function() {
+                    if (!refreshing) {
+                      refreshing = true;
+                      console.log('[JL360] Nuevo Service Worker activo. Recargando para aplicar cambios...');
+                      window.location.reload();
+                    }
                   });
                 });
               }

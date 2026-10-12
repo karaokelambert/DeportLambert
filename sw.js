@@ -1,10 +1,10 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v10
-// Módulos: NetworkFirst para HTML/API + Bypass Supabase Realtime + Offline Fallback
+// Versión de Caché PWA: jl-sports-hub-v11
+// Módulos: NetworkFirst para HTML/API/Logos + Bypass Supabase Realtime + Desahuciado Inmediato de Caché
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v10';
+const CACHE_NAME = 'jl-sports-hub-v11';
 
 const STATIC_ASSETS = [
   './',
@@ -31,29 +31,36 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// ── 2. ACTIVATE: Purgar cachés antiguas y tomar control de clientes ──
+// ── 2. ACTIVATE: Purgar automáticamente todas las cachés obsoletas y tomar control de clientes ──
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((key) => {
             console.log('[SW] Eliminando caché obsoleta:', key);
             return caches.delete(key);
-          }
-        })
+          })
       );
     }).then(() => {
       return self.clients.claim();
     }).then(() => {
-      // Notificar a las pestañas abiertas para refrescar estado en vivo
-      return self.clients.matchAll().then((clients) => {
+      // Notificar de inmediato a todas las pestañas/clientes móviles abiertos
+      return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
         clients.forEach((client) => {
           client.postMessage({ type: 'SW_ACTIVATED', version: CACHE_NAME });
         });
       });
     })
   );
+});
+
+// Escuchar mensaje SKIP_WAITING desde los clientes para activación forzada
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // ── 3. FETCH: Bypass Supabase/Realtime Directo + NetworkFirst para HTML/Vistas ────
@@ -124,27 +131,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ESTRATEGIA 3: CacheFirst con actualización de fondo para imágenes y logos estáticos
+  // ESTRATEGIA 3: NetworkFirst para imágenes y logos (Garantiza que logos actualizados se muestren de inmediato en móviles)
   event.respondWith(
-    caches.match(req).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Actualizar en segundo plano
-        fetch(req).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, networkResponse));
-          }
-        }).catch(() => {});
-        return cachedResponse;
-      }
-
-      return fetch(req).then((networkResponse) => {
+    fetch(req)
+      .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const responseClone = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, responseClone));
         }
         return networkResponse;
-      });
-    })
+      })
+      .catch(async () => {
+        const cachedResponse = await caches.match(req);
+        if (cachedResponse) return cachedResponse;
+        if (url.includes('logo.png')) {
+          const fallback = (await caches.match('./logo.png')) || (await caches.match('/logo.png')) || (await caches.match('./icon.png'));
+          if (fallback) return fallback;
+        }
+        return new Response('', { status: 404, statusText: 'Imagen no disponible sin conexión' });
+      })
   );
 });
 

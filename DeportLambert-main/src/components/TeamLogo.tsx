@@ -58,15 +58,25 @@ export function getTeamLogoUrl(team?: any): string {
  */
 export function resolveLogoUrl(url?: string): string {
   if (!url) return '';
-  const trimmed = url.trim();
+  let trimmed = url.trim();
   if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return '';
 
-  // Data URIs y Blob URIs
+  // Data URIs y Blob URIs intactos (contienen los datos directos)
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
 
-  // URLs absolutas HTTP / HTTPS
+  // Si se editó en PC localmente y se guardó con localhost o 127.0.0.1, extraer solo la ruta
+  if (trimmed.includes('localhost:') || trimmed.includes('127.0.0.1:')) {
+    try {
+      const parsed = new URL(trimmed);
+      trimmed = parsed.pathname;
+    } catch (_) {
+      trimmed = trimmed.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/, '');
+    }
+  }
+
+  // URLs absolutas HTTP / HTTPS externas
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     // Si la página se sirve sobre HTTPS, auto-mejorar HTTP a HTTPS para evitar bloqueos por contenido mixto en móviles
     if (typeof window !== 'undefined' && window.location.protocol === 'https:' && trimmed.startsWith('http://')) {
@@ -75,17 +85,23 @@ export function resolveLogoUrl(url?: string): string {
     return trimmed;
   }
 
-  // Rutas relativas o locales
-  const cleanPath = trimmed.replace(/^(\.\/|\/)+/, '');
+  // Rutas relativas o locales (limpiar prefijos y evitar duplicar DeportLambert/)
+  const cleanPath = trimmed
+    .replace(/^(\.\/|\/)+/, '')
+    .replace(/^DeportLambert\//, '');
+
+  const cacheBuster = '?v=v11';
+  const hasParams = cleanPath.includes('?');
+  const pathWithVersion = hasParams ? cleanPath : `${cleanPath}${cacheBuster}`;
 
   if (typeof window !== 'undefined') {
     const pathname = window.location.pathname;
     if (pathname.includes('/DeportLambert')) {
-      return `/DeportLambert/${cleanPath}`;
+      return `/DeportLambert/${pathWithVersion}`;
     }
   }
 
-  return `/${cleanPath}`;
+  return `/${pathWithVersion}`;
 }
 
 /**
@@ -296,13 +312,13 @@ export default function TeamLogo({
 
     // Fallbacks progresivos si la ruta inicial falla en móviles
     if (retryStep === 1) {
-      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '').replace(/^DeportLambert\//, '');
       resolved = `/DeportLambert/${clean}`;
     } else if (retryStep === 2) {
-      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '').replace(/^DeportLambert\//, '');
       resolved = `/${clean}`;
     } else if (retryStep === 3) {
-      const clean = rawUrl.replace(/^(\.\/|\/)+/, '');
+      const clean = rawUrl.replace(/^(\.\/|\/)+/, '').replace(/^DeportLambert\//, '');
       resolved = `./${clean}`;
     }
 

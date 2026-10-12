@@ -1139,12 +1139,14 @@ export function CloudSyncModal({
   syncStatus,
   lastSyncTime,
   onForceSync,
+  onExportDatabase,
 }: {
   isOpen: boolean;
   onClose: () => void;
   syncStatus: 'synced' | 'syncing' | 'offline';
   lastSyncTime: string;
   onForceSync: () => void;
+  onExportDatabase?: () => void;
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [spUrl, setSpUrl] = useState('');
@@ -1341,13 +1343,25 @@ export function CloudSyncModal({
           )}
         </div>
 
+        {/* Botones de Acción y Exportación */}
+        <div className="space-y-2 mb-4">
+          {onExportDatabase && (
+            <button
+              onClick={() => { onExportDatabase(); }}
+              className="w-full py-2.5 px-4 rounded-xl font-black uppercase text-[11px] tracking-wider bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/50 flex items-center justify-center gap-2 transition-all shadow"
+            >
+              <Download className="w-4 h-4" /> Exportar Base de Datos / Respaldo (JSON para GitHub Pages)
+            </button>
+          )}
+        </div>
+
         {/* Botón de Sincronización Forzada */}
         <div className="flex gap-3">
           <button
             onClick={() => { onForceSync(); onClose(); }}
             className="flex-1 py-3 px-4 rounded-xl font-black uppercase text-xs tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-all"
           >
-            <Check className="w-4 h-4 stroke-[3]" /> Sincronizar Ahora
+            <Check className="w-4 h-4 stroke-[3]" /> Sincronizar Móviles en Vivo
           </button>
           <button
             onClick={onClose}

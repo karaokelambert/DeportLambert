@@ -366,13 +366,68 @@ export default function SportsManager() {
       try {
         setSyncStatus('syncing');
         // 1. Consultar PRIMERO la nube Supabase como Fuente Única de Verdad
-        const remote = await fetchStateFromCloud(syncConfig);
+        let remote = await fetchStateFromCloud(syncConfig);
+
+        // Si la nube no responde o no tiene datos (por ejemplo, proyecto Supabase en pausa o red local),
+        // intentar cargar desde el respaldo local de esta PC o database_seed.json de GitHub Pages
+        if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) {
+          try {
+            if (typeof window !== 'undefined') {
+              const localExport = localStorage.getItem('jl360_local_exported_state');
+              if (localExport) {
+                const parsed = JSON.parse(localExport);
+                if (parsed && parsed.disciplineData && Object.keys(parsed.disciplineData).length > 0) {
+                  remote = parsed;
+                }
+              }
+            }
+          } catch (_) {}
+
+          // Si aún no hay datos remotos, consultar database_seed.json servido en GitHub Pages / servidor
+          if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) {
+            try {
+              const seedUrl = resolveLogoUrl('/database_seed.json');
+              const res = await fetch(seedUrl, { cache: 'no-cache' });
+              if (res.ok) {
+                const seedData = await res.json();
+                if (seedData && seedData.disciplineData) {
+                  remote = seedData;
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
         if (remote && remote.disciplineData && Object.keys(remote.disciplineData).length > 0) {
-          disciplineDataRef.current = remote.disciplineData;
-          setDisciplineData(remote.disciplineData);
-          if (remote.disciplinesList) {
-            disciplinesListRef.current = remote.disciplinesList;
-            setDisciplinesList(remote.disciplinesList);
+          // Reevaluar dinámicamente rutas de logos para garantizar compatibilidad móvil y GitHub Pages
+          const normalizedData: Record<string, { groups: string[], teams: Team[], games: Game[] }> = {};
+          for (const k of Object.keys(remote.disciplineData)) {
+            const disc = remote.disciplineData[k];
+            if (!disc) continue;
+            normalizedData[k] = {
+              ...disc,
+              teams: (disc.teams || []).map((t: Team) => ({
+                ...t,
+                logoUrl: t.logoUrl ? resolveLogoUrl(t.logoUrl) : t.logoUrl
+              })),
+              games: (disc.games || []).map((g: Game) => ({
+                ...g,
+                homeTeamLogo: g.homeTeamLogo ? resolveLogoUrl(g.homeTeamLogo) : (g as any).logo_local ? resolveLogoUrl((g as any).logo_local) : g.homeTeamLogo,
+                awayTeamLogo: g.awayTeamLogo ? resolveLogoUrl(g.awayTeamLogo) : (g as any).logo_visitante ? resolveLogoUrl((g as any).logo_visitante) : g.awayTeamLogo,
+              }))
+            };
+          }
+
+          disciplineDataRef.current = normalizedData;
+          setDisciplineData(normalizedData);
+
+          if (remote.disciplinesList && Array.isArray(remote.disciplinesList)) {
+            const normalizedList = remote.disciplinesList.map((d: any) => ({
+              ...d,
+              customLogoUrl: d.customLogoUrl ? resolveLogoUrl(d.customLogoUrl) : d.customLogoUrl
+            }));
+            disciplinesListRef.current = normalizedList;
+            setDisciplinesList(normalizedList);
           }
           if (remote.branding) {
             brandingRef.current = remote.branding;
@@ -395,13 +450,17 @@ export default function SportsManager() {
             const updatedTeams = (directData.teams && directData.teams.length > 0)
               ? disc.teams.map(t => {
                   const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
-                  const resolvedLogo = (matched && matched.logoUrl) ? matched.logoUrl : t.logoUrl;
+                  const resolvedLogo = (matched && matched.logoUrl) ? resolveLogoUrl(matched.logoUrl) : (t.logoUrl ? resolveLogoUrl(t.logoUrl) : '');
                   return matched ? { ...t, ...matched, logoUrl: resolvedLogo } : t;
                 })
               : disc.teams;
 
             const updatedGames = (directData.games && directData.games.length > 0)
-              ? directData.games
+              ? directData.games.map(g => ({
+                  ...g,
+                  homeTeamLogo: g.homeTeamLogo ? resolveLogoUrl(g.homeTeamLogo) : g.homeTeamLogo,
+                  awayTeamLogo: g.awayTeamLogo ? resolveLogoUrl(g.awayTeamLogo) : g.awayTeamLogo,
+                }))
               : disc.games;
 
             const nextState = {
@@ -843,6 +902,47 @@ export default function SportsManager() {
       isLocallyMutatingRef.current = false;
     }, 3500);
   }, [disciplineData, disciplinesList, branding, registeredAdmins, syncConfig, userName, role]);
+
+  // Sincronización y exportación de base de datos para GitHub Pages y dispositivos móviles
+  const handleExportDatabaseSeed = useCallback(async () => {
+    const now = Date.now();
+    const currentState: CloudTournamentState = {
+      version: now,
+      updatedAt: now,
+      updatedBy: userName || role || 'Administrador',
+      disciplineData: disciplineDataRef.current || disciplineData,
+      disciplinesList: disciplinesListRef.current || disciplinesList,
+      branding: brandingRef.current || branding,
+      registeredAdmins: adminsRef.current || registeredAdmins,
+    };
+
+    // 1. Guardar en memoria local de la PC para persistencia inmediata
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('jl360_local_exported_state', JSON.stringify(currentState));
+      }
+    } catch (_) {}
+
+    // 2. Transmitir forzadamente a Supabase en paralelo
+    triggerPushSync(currentState).catch(() => {});
+
+    // 3. Descargar archivo database_seed.json listo para el commit/deploy
+    try {
+      const blob = new Blob([JSON.stringify(currentState, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'database_seed.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.warn('Error descargando database_seed.json:', e);
+    }
+
+    alert('✓ Base de datos y logos guardados y exportados exitosamente.\n\nSe ha generado el archivo database_seed.json. Al desplegar a GitHub Pages con "npm run deploy", todos los teléfonos y usuarios consumirán estos datos actualizados.');
+  }, [disciplineData, disciplinesList, branding, registeredAdmins, userName, role, triggerPushSync]);
 
   const currentTeams = disciplineData[currentDiscKey]?.teams || defaultForCurrentDisc.teams;
   const currentGames = disciplineData[currentDiscKey]?.games || defaultForCurrentDisc.games;
@@ -1849,6 +1949,14 @@ export default function SportsManager() {
             </button>
 
             <button
+              onClick={handleExportDatabaseSeed}
+              title="Sincronizar y Exportar Base de Datos para GitHub Pages y Teléfonos Móviles"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-500/70 bg-emerald-950/70 hover:bg-emerald-900 text-[#00E676] font-black uppercase text-[10px] tracking-wider transition-all shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Sincronizar DB Móviles
+            </button>
+
+            <button
               onClick={() => setSelectedDiscipline(null)}
               className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 hover:border-amber-500 bg-slate-800/80 text-amber-300 text-[10px] font-black uppercase tracking-wider transition-all"
             >
@@ -1948,6 +2056,7 @@ export default function SportsManager() {
         syncStatus={syncStatus}
         lastSyncTime={lastSyncTime}
         onForceSync={triggerPushSync}
+        onExportDatabase={handleExportDatabaseSeed}
       />
       <PWAInstallBanner />
     </div>
