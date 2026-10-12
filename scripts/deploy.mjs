@@ -66,7 +66,7 @@ async function main() {
   }
 
   // 4. Asegurar versión de sw.js en todas las rutas
-  console.log('\n[3/4] Verificando versión de Service Worker (jl-sports-hub-v11)...');
+  console.log('\n[3/4] Verificando versión de Service Worker (jl-sports-hub-v12)...');
   const swPaths = [
     path.join(rootDir, 'sw.js'),
     path.join(appDir, 'public', 'sw.js'),
@@ -76,10 +76,10 @@ async function main() {
   swPaths.forEach(swPath => {
     if (fs.existsSync(swPath)) {
       let content = fs.readFileSync(swPath, 'utf-8');
-      if (!content.includes("'jl-sports-hub-v11'")) {
-        content = content.replace(/CACHE_NAME\s*=\s*['"][^'"]+['"]/, "CACHE_NAME = 'jl-sports-hub-v11'");
+      if (!content.includes("'jl-sports-hub-v12'")) {
+        content = content.replace(/CACHE_NAME\s*=\s*['"][^'"]+['"]/, "CACHE_NAME = 'jl-sports-hub-v12'");
         fs.writeFileSync(swPath, content, 'utf-8');
-        console.log(`✓ Actualizada versión a jl-sports-hub-v11 en: ${swPath}`);
+        console.log(`✓ Actualizada versión a jl-sports-hub-v12 en: ${swPath}`);
       }
     }
   });
@@ -90,10 +90,10 @@ async function main() {
     run('git add -A');
     const status = execSync('git status --porcelain', { cwd: rootDir }).toString();
     if (status.trim().length > 0) {
-      run('git commit -m "release: actualizar a jl-sports-hub-v11 con invalidación de caché y sincronización de base de datos"');
+      run('git commit -m "fix(supabase): resolver Failed to fetch, incrustar credenciales seguras y bypass nativo en Service Worker v12"');
       run('git push origin main');
       console.log('\n✅ ¡Despliegue completado con éxito a origin main!');
-      console.log('GitHub Pages actualizará los cambios y el Service Worker v11 invalidará la caché móvil de inmediato.');
+      console.log('GitHub Pages actualizará los cambios y el Service Worker v12 invalidará la caché móvil de inmediato.');
     } else {
       console.log('ℹ️ No hay cambios pendientes para commitear.');
       run('git push origin main');

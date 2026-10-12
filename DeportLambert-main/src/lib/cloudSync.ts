@@ -185,6 +185,7 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
   }
 
   const cfg = config || getSyncConfig();
+  console.log(`[CloudSync] pushStateToCloud iniciando. URL destino: "${cfg.supabaseUrl}" | Canal: "${cfg.channelId}"`);
 
   // Broadcast through Supabase Realtime Channel
   try {
@@ -232,6 +233,8 @@ export async function pushStateToCloud(state: CloudTournamentState, config?: Syn
 export async function fetchStateFromCloud(config?: SyncConfig): Promise<CloudTournamentState | null> {
   const cfg = config || getSyncConfig();
   if (!cfg.enabled) return getLocalState();
+
+  console.log(`[CloudSync] fetchStateFromCloud consultando URL: "${cfg.supabaseUrl}" | Canal: "${cfg.channelId}"`);
 
   try {
     // 1. Supabase Query primero

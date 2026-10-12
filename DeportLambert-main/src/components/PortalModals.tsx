@@ -38,7 +38,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { DisciplineData, DISCIPLINES } from './DisciplinesPortal';
-import { testSupabaseConnection } from '../lib/supabaseClient';
+import { testSupabaseConnection, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY } from '../lib/supabaseClient';
 import { resolveLogoUrl, compressImageFileToDataUri } from './TeamLogo';
 import { 
   BasketballIcon3D, 
@@ -1168,13 +1168,17 @@ export function CloudSyncModal({
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          setSpUrl(parsed.url || '');
-          setSpKey(parsed.key || '');
+          setSpUrl(parsed.url && parsed.url.startsWith('https://') ? parsed.url : DEFAULT_SUPABASE_URL);
+          setSpKey(parsed.key && parsed.key.startsWith('eyJ') ? parsed.key : DEFAULT_SUPABASE_KEY);
           setSpChannel(parsed.channel || 'deportlambert_live');
-        } catch (e) {}
+        } catch (e) {
+          setSpUrl(DEFAULT_SUPABASE_URL);
+          setSpKey(DEFAULT_SUPABASE_KEY);
+          setSpChannel('deportlambert_live');
+        }
       } else {
-        setSpUrl(process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nhurcieffcazroqfarrh.supabase.co');
-        setSpKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg');
+        setSpUrl(DEFAULT_SUPABASE_URL);
+        setSpKey(DEFAULT_SUPABASE_KEY);
         setSpChannel('deportlambert_live');
       }
     }

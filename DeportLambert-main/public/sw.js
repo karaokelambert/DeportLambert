@@ -1,10 +1,10 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v11
-// Módulos: NetworkFirst para HTML/API/Logos + Bypass Supabase Realtime + Desahuciado Inmediato de Caché
+// Versión de Caché PWA: jl-sports-hub-v12
+// Módulos: NetworkFirst para HTML/API/Logos + Bypass Absoluto Supabase Realtime + Desahuciado Inmediato de Caché
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v11';
+const CACHE_NAME = 'jl-sports-hub-v12';
 
 const STATIC_ASSETS = [
   './',
@@ -63,12 +63,13 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// ── 3. FETCH: Bypass Supabase/Realtime Directo + NetworkFirst para HTML/Vistas ────
+// ── 3. FETCH: Bypass Absoluto Supabase/Realtime Directo + NetworkFirst para HTML/Vistas ────
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = req.url;
 
-  // EXCLUSIÓN EXPLÍCITA DE SUPABASE, WEBSOCKETS Y APIs (Siempre a la red en vivo, sin caché)
+  // BYPASS TOTAL Y NATIVO DE SUPABASE, WEBSOCKETS Y APIS
+  // IMPORTANTE: NO interceptar con event.respondWith. Dejar que el navegador realice la conexión nativa con CORS
   try {
     const urlObj = new URL(url);
     if (
@@ -81,12 +82,10 @@ self.addEventListener('fetch', (event) => {
       url.startsWith('ws:') ||
       url.startsWith('wss:')
     ) {
-      event.respondWith(fetch(event.request));
       return;
     }
   } catch (e) {
     if (url.includes('supabase.co') || url.includes('/realtime/')) {
-      event.respondWith(fetch(event.request));
       return;
     }
   }

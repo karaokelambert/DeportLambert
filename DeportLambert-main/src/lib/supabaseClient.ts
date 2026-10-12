@@ -2,9 +2,18 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Read from Environment Variables or configured default endpoint
-const DEFAULT_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nhurcieffcazroqfarrh.supabase.co';
-const DEFAULT_SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg';
+// Safe embedded production credentials for GitHub Pages & standalone builds
+export const SUPABASE_PROD_URL = 'https://nhurcieffcazroqfarrh.supabase.co';
+export const SUPABASE_PROD_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg';
+
+// Read from Environment Variables or hardcoded production endpoint
+export const DEFAULT_SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL.trim().length > 0)
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
+  : SUPABASE_PROD_URL;
+
+export const DEFAULT_SUPABASE_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim().length > 0)
+  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim()
+  : SUPABASE_PROD_ANON_KEY;
 
 const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v2';
 
@@ -22,9 +31,21 @@ export function getStoredSupabaseConfig(): SupabaseConfig {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.url && parsed.key && parsed.key.startsWith('eyJ') && parsed.url.includes('nhurcieffcazroqfarrh')) {
-        return parsed;
-      }
+      const validUrl = (parsed.url && typeof parsed.url === 'string' && parsed.url.startsWith('https://'))
+        ? parsed.url.trim()
+        : DEFAULT_SUPABASE_URL;
+      const validKey = (parsed.key && typeof parsed.key === 'string' && parsed.key.startsWith('eyJ'))
+        ? parsed.key.trim()
+        : DEFAULT_SUPABASE_KEY;
+      const validChannel = (parsed.channel && typeof parsed.channel === 'string' && parsed.channel.trim())
+        ? parsed.channel.trim()
+        : 'deportlambert_live';
+
+      return {
+        url: validUrl,
+        key: validKey,
+        channel: validChannel
+      };
     }
   } catch (e) {}
   const freshConfig: SupabaseConfig = { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY, channel: 'deportlambert_live' };
@@ -46,14 +67,19 @@ let currentConfigSig = '';
 
 export function getSupabaseClient(): SupabaseClient | null {
   const config = getStoredSupabaseConfig();
-  const url = (config.url || DEFAULT_SUPABASE_URL || '').trim();
-  const key = (config.key || DEFAULT_SUPABASE_KEY || '').trim();
+  const url = (config.url || DEFAULT_SUPABASE_URL || SUPABASE_PROD_URL).trim();
+  const key = (config.key || DEFAULT_SUPABASE_KEY || SUPABASE_PROD_ANON_KEY).trim();
   
+  console.log('[Supabase Client] Inicializando/Verificando cliente. URL destino:', url);
+
   const sig = `${url}_${key}`;
   if (cachedClient && currentConfigSig === sig) {
     return cachedClient;
   }
-  if (!url || !key) return null;
+  if (!url || !key) {
+    console.error('[Supabase Client] ERROR: URL o Key es undefined/vacía:', { url, hasKey: !!key });
+    return null;
+  }
   try {
     cachedClient = createClient(url, key, {
       auth: { persistSession: false },
@@ -66,16 +92,19 @@ export function getSupabaseClient(): SupabaseClient | null {
     currentConfigSig = sig;
     return cachedClient;
   } catch (e) {
-    console.warn('[Supabase] Error inicializando cliente:', e);
+    console.warn('[Supabase Client] Error inicializando cliente en ' + url + ':', e);
     return null;
   }
 }
 
 export async function testSupabaseConnection(customUrl?: string, customKey?: string): Promise<{ ok: boolean; message: string }> {
-  const url = (customUrl || getStoredSupabaseConfig().url || DEFAULT_SUPABASE_URL || '').trim();
-  const key = (customKey || getStoredSupabaseConfig().key || DEFAULT_SUPABASE_KEY || '').trim();
+  const url = (customUrl || getStoredSupabaseConfig().url || DEFAULT_SUPABASE_URL || SUPABASE_PROD_URL).trim();
+  const key = (customKey || getStoredSupabaseConfig().key || DEFAULT_SUPABASE_KEY || SUPABASE_PROD_ANON_KEY).trim();
+
+  console.log('[Supabase Test] Probando conexión a Supabase. URL destino exacta:', url);
 
   if (!url || !key) {
+    console.error('[Supabase Test] Falta URL o Key:', { url, hasKey: !!key });
     return { ok: false, message: 'Falta la URL o la API Key de Supabase.' };
   }
 
@@ -113,6 +142,8 @@ export async function testSupabaseConnection(customUrl?: string, customKey?: str
 // ── Helpers directos de Supabase para Tablas 'partidos', 'equipos', 'posiciones', 'tournament_sync' ──
 
 export async function fetchSupabaseTournamentState(channelId: string = 'deportlambert_live'): Promise<any | null> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Query] Consultando tournament_sync en URL destino: "${config.url}" | Canal: "${channelId}"`);
   const client = getSupabaseClient();
   if (!client) return null;
   try {
@@ -132,8 +163,13 @@ export async function fetchSupabaseTournamentState(channelId: string = 'deportla
 }
 
 export async function saveSupabaseTournamentState(channelId: string = 'deportlambert_live', state: any): Promise<boolean> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Save] Guardando datos en Supabase. URL destino: "${config.url}" | Canal: "${channelId}"`);
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    console.error(`[Supabase Save] No se pudo inicializar cliente para URL: "${config.url}"`);
+    return false;
+  }
   try {
     const { error } = await client
       .from('tournament_sync')
@@ -143,14 +179,22 @@ export async function saveSupabaseTournamentState(channelId: string = 'deportlam
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' });
 
+    if (error) {
+      console.error(`[Supabase Save] Error upsert en "${config.url}":`, error);
+    } else {
+      console.log(`[Supabase Save] Guardado exitoso en "${config.url}"`);
+    }
+
     return !error;
   } catch (e) {
-    console.warn('[Supabase] Error en upsert tournament_sync:', e);
+    console.warn(`[Supabase Save] Excepción al guardar en "${config.url}":`, e);
     return false;
   }
 }
 
 export async function syncGamesToSupabaseTable(discipline: string, games: any[]): Promise<boolean> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Save] Sincronizando ${games?.length || 0} partidos en URL: "${config.url}" | Disciplina: "${discipline}"`);
   const client = getSupabaseClient();
   if (!client || !games || games.length === 0) return false;
   try {
@@ -176,13 +220,19 @@ export async function syncGamesToSupabaseTable(discipline: string, games: any[])
       .from('partidos')
       .upsert(rows, { onConflict: 'id' });
 
+    if (error) {
+      console.warn(`[Supabase Save] Error en partidos upsert (${config.url}):`, error);
+    }
     return !error;
   } catch (e) {
+    console.warn(`[Supabase Save] Excepción sincronizando partidos en ${config.url}:`, e);
     return false;
   }
 }
 
 export async function syncTeamsToSupabaseTable(discipline: string, teams: any[]): Promise<boolean> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Save] Sincronizando ${teams?.length || 0} equipos en URL: "${config.url}" | Disciplina: "${discipline}"`);
   const client = getSupabaseClient();
   if (!client || !teams || teams.length === 0) return false;
   try {
@@ -203,8 +253,12 @@ export async function syncTeamsToSupabaseTable(discipline: string, teams: any[])
       .from('equipos')
       .upsert(rows, { onConflict: 'id' });
 
+    if (error) {
+      console.warn(`[Supabase Save] Error en equipos upsert (${config.url}):`, error);
+    }
     return !error;
   } catch (e) {
+    console.warn(`[Supabase Save] Excepción sincronizando equipos en ${config.url}:`, e);
     return false;
   }
 }
@@ -385,8 +439,10 @@ export async function broadcastScoreUpdate(discipline: string, payload: any) {
  * Actualiza un único partido en Supabase directamente con verificación de respuesta y Broadcast instantáneo
  */
 export async function updateSingleGameInSupabase(discipline: string, game: any): Promise<{ ok: boolean; status?: number; data?: any; error?: any }> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Save] Actualizando partido en URL: "${config.url}" | Disciplina: "${discipline}"`);
   const client = getSupabaseClient();
-  if (!client) return { ok: false, error: new Error('No Supabase client initialized') };
+  if (!client) return { ok: false, error: new Error(`No Supabase client initialized (URL: ${config.url})`) };
   
   const rawId = String(game.id || '').replace(/^[a-z0-9]+_/, '');
   const primaryId = String(game.id || '').includes('_') ? game.id : `${discipline}_${game.id}`;
@@ -537,6 +593,8 @@ export async function updateSingleGameInSupabase(discipline: string, game: any):
  * Actualiza un único equipo en Supabase directamente con su logo_url
  */
 export async function updateSingleTeamInSupabase(discipline: string, team: any): Promise<{ ok: boolean; error?: any }> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Save] Actualizando equipo en URL: "${config.url}" | Disciplina: "${discipline}"`);
   const client = getSupabaseClient();
   if (!client) return { ok: false, error: 'No Supabase client' };
   
@@ -571,6 +629,8 @@ export async function updateSingleTeamInSupabase(discipline: string, team: any):
  * Embebe directamente los logos de los equipos en la consulta de partidos mediante JOIN relacional
  */
 export async function fetchSupabaseDirectData(disciplineId: string = 'baloncesto'): Promise<{ teams: any[]; games: any[] } | null> {
+  const config = getStoredSupabaseConfig();
+  console.log(`[Supabase Query] Consultando datos directos en URL: "${config.url}" | Disciplina: "${disciplineId}"`);
   const client = getSupabaseClient();
   if (!client) return null;
   try {
