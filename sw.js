@@ -1,10 +1,10 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v3
+// Versión de Caché PWA: jl-sports-hub-v10
 // Módulos: NetworkFirst para HTML/API + Bypass Supabase Realtime + Offline Fallback
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v3';
+const CACHE_NAME = 'jl-sports-hub-v10';
 
 const STATIC_ASSETS = [
   './',
