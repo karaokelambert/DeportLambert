@@ -110,22 +110,31 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
     cleanups.push(() => broadcastChannel?.removeEventListener('message', bHandler));
   }
 
-  // 2. Supabase Realtime Channel Global (Escucha activa de WebSockets y Postgres Changes)
+  // 2. Supabase Realtime Channel Global Compartido (Escucha activa de WebSockets y Postgres Changes)
   try {
     const supabase = getSupabaseClient();
     if (supabase) {
       const cfg = getSyncConfig();
-      const channelName = `realtime_tourney_${cfg.channelId || 'deportlambert_live'}_${Date.now()}`;
+      // IMPORTANTE: El nombre del canal debe ser idéntico en todos los dispositivos para que el Broadcast funcione
+      const channelName = `realtime_tourney_${cfg.channelId || 'deportlambert_live'}`;
       
       const channel = supabase.channel(channelName, {
         config: {
-          broadcast: { self: false }
+          broadcast: { ack: false, self: true }
         }
       })
         .on('broadcast', { event: 'state_update' }, (payload) => {
           if (payload && payload.payload) {
-            console.log('[Supabase Realtime] Broadcast state_update recibido');
+            console.log('[Supabase Realtime] Broadcast state_update recibido en canal global:', channelName);
             onUpdate(payload.payload as CloudTournamentState);
+          }
+        })
+        .on('broadcast', { event: 'score-update' }, (payload) => {
+          if (payload && payload.payload) {
+            console.log('[Supabase Realtime] Broadcast score-update recibido en canal global:', payload.payload);
+            fetchStateFromCloud(cfg).then(fresh => {
+              if (fresh) onUpdate(fresh);
+            });
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_sync' }, async (payload: any) => {
@@ -146,11 +155,27 @@ export function subscribeToRealtimeUpdates(onUpdate: (state: CloudTournamentStat
           console.log('[Supabase Realtime] Cambio detectado en tabla equipos');
           const fresh = await fetchStateFromCloud(cfg);
           if (fresh) onUpdate(fresh);
-        })
-        .subscribe((status, err) => {
-          console.log(`[Supabase Realtime Channel: ${channelName}] Status:`, status, err || '');
         });
 
+      let isConnected = false;
+      const subscribeWithReconnect = () => {
+        channel.subscribe((status, err) => {
+          console.log(`[Supabase Realtime Channel: ${channelName}] Status:`, status, err || '');
+          if (status === 'SUBSCRIBED') {
+            isConnected = true;
+          } else if (status === 'TIMED_OUT' || status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            isConnected = false;
+            console.warn(`[Supabase Realtime] Desconectado (${status}), reintentando suscripción en 2s...`);
+            setTimeout(() => {
+              if (!isConnected && activeRealtimeChannel === channel) {
+                channel.subscribe();
+              }
+            }, 2000);
+          }
+        });
+      };
+
+      subscribeWithReconnect();
       activeRealtimeChannel = channel;
 
       cleanups.push(() => {

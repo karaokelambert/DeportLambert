@@ -490,18 +490,18 @@ export default function SportsManager() {
   const applyRemoteUpdate = useCallback((remote: CloudTournamentState) => {
     if (!remote || !remote.disciplineData || Object.keys(remote.disciplineData).length === 0) return;
     
-    // Si estamos editando localmente en este mismo instante, proteger la mutación local
+    // Si estamos editando activamente en este cliente en este mismo instante, no interrumpir la edición
     if (isLocallyMutatingRef.current) return;
 
     const remoteVersion = remote.version || 0;
     const remoteUpdated = remote.updatedAt || 0;
 
-    // Protección anti-reversión: Si el estado local es más nuevo (por versión o timestamp), ignorar estado viejo
-    if (localVersionRef.current > 1 && remoteVersion < localVersionRef.current && remoteUpdated <= localUpdatedAtRef.current) {
+    // Protección anti-reversión: solo si el cliente actual estaba mutando localmente
+    if (isLocallyMutatingRef.current && localVersionRef.current > 1 && remoteVersion < localVersionRef.current && remoteUpdated <= localUpdatedAtRef.current) {
       return;
     }
 
-    // Merge cuidadoso: Si el remoto tiene equipos o disciplinas pero le faltan logos que ya teníamos, conservarlos
+    // Merge cuidadoso: conservar logos locales si el remoto no los incluye
     const currentLocal = disciplineDataRef.current || {};
     const mergedDisciplineData = { ...remote.disciplineData };
 
@@ -518,7 +518,7 @@ export default function SportsManager() {
         });
       }
 
-      // Merge de partidos: preservar marcadores y cuartos actualizados en vivo si el remoto viene con defaults
+      // Merge de partidos: el remoto de Supabase es la fuente autoritativa de marcadores
       if (localDisc?.games && remoteDisc?.games) {
         remoteDisc.games = remoteDisc.games.map((rg: Game) => {
           const lg = localDisc.games.find((g: Game) => g.id === rg.id);
@@ -531,10 +531,10 @@ export default function SportsManager() {
               ...rg,
               homeTeamLogo: rg.homeTeamLogo || (rg as any).logo_local || (lg as any).homeTeamLogo || (lg as any).logo_local,
               awayTeamLogo: rg.awayTeamLogo || (rg as any).logo_visitante || (lg as any).awayTeamLogo || (lg as any).logo_visitante,
-              homeScore: lg.homeScore !== undefined && rg.homeScore === 0 ? lg.homeScore : rg.homeScore,
-              awayScore: lg.awayScore !== undefined && rg.awayScore === 0 ? lg.awayScore : rg.awayScore,
-              homeQuarters: Array.isArray(rg.homeQuarters) && rg.homeQuarters.some(q => q > 0) ? rg.homeQuarters : (lg.homeQuarters || rg.homeQuarters),
-              awayQuarters: Array.isArray(rg.awayQuarters) && rg.awayQuarters.some(q => q > 0) ? rg.awayQuarters : (lg.awayQuarters || rg.awayQuarters),
+              homeScore: rg.homeScore !== undefined ? rg.homeScore : lg.homeScore,
+              awayScore: rg.awayScore !== undefined ? rg.awayScore : lg.awayScore,
+              homeQuarters: rg.homeQuarters || lg.homeQuarters,
+              awayQuarters: rg.awayQuarters || lg.awayQuarters,
             };
           }
           return rg;
@@ -573,6 +573,81 @@ export default function SportsManager() {
     setLastSyncTime(new Date(localUpdatedAtRef.current).toLocaleTimeString());
     setSyncStatus('synced');
   }, []);
+
+  // Aplicar actualización directa y autoritativa de las tablas 'partidos' y 'equipos' de Supabase
+  const applyDirectDataUpdate = useCallback((discKey: string, directData: { teams: any[]; games: any[] }) => {
+    if (!directData || isLocallyMutatingRef.current) return;
+    
+    setDisciplineData(prev => {
+      const disc = prev[discKey] || defaultForCurrentDisc;
+      const currentTeams = disc.teams || [];
+      const currentGames = disc.games || [];
+
+      // 1. Equipos y logos
+      const updatedTeams = (directData.teams && directData.teams.length > 0)
+        ? currentTeams.map(t => {
+            const matched = directData.teams.find(dt => dt.id === t.id || dt.name.toLowerCase() === t.name.toLowerCase());
+            if (matched) {
+              const resolvedLogo = matched.logoUrl ? resolveLogoUrl(matched.logoUrl) : (t.logoUrl ? resolveLogoUrl(t.logoUrl) : '');
+              return { ...t, ...matched, logoUrl: resolvedLogo };
+            }
+            return t;
+          })
+        : currentTeams;
+
+      // 2. Partidos y marcadores actualizados
+      let hasChanges = false;
+      const updatedGames = (directData.games && directData.games.length > 0)
+        ? currentGames.map(g => {
+            // Si el partido está siendo editado activamente en esta pantalla, no sobreescribir
+            const isEditing = activelyEditingGamesRef.current.has(g.id) || activelyEditingGamesRef.current.has(`${discKey}_${g.id}`);
+            if (isEditing) return g;
+
+            const matched = directData.games.find(dg => dg.id === g.id || `${discKey}_${g.id}` === dg.id || g.id === `${discKey}_${dg.id}`);
+            if (matched) {
+              const newHomeScore = matched.homeScore !== undefined ? Number(matched.homeScore) : g.homeScore;
+              const newAwayScore = matched.awayScore !== undefined ? Number(matched.awayScore) : g.awayScore;
+              const newStatus = matched.status || g.status;
+              const newCurrentQuarter = matched.currentQuarter || g.currentQuarter;
+
+              if (newHomeScore !== g.homeScore || newAwayScore !== g.awayScore || newStatus !== g.status || newCurrentQuarter !== g.currentQuarter) {
+                hasChanges = true;
+              }
+
+              return {
+                ...g,
+                homeScore: newHomeScore,
+                awayScore: newAwayScore,
+                homeQuarters: matched.homeQuarters || g.homeQuarters,
+                awayQuarters: matched.awayQuarters || g.awayQuarters,
+                status: newStatus,
+                currentQuarter: newCurrentQuarter,
+                homeTeamLogo: matched.homeTeamLogo ? resolveLogoUrl(matched.homeTeamLogo) : g.homeTeamLogo,
+                awayTeamLogo: matched.awayTeamLogo ? resolveLogoUrl(matched.awayTeamLogo) : g.awayTeamLogo,
+                equipo_local: matched.equipo_local || g.equipo_local,
+                equipo_visitante: matched.equipo_visitante || g.equipo_visitante,
+              };
+            }
+            return g;
+          })
+        : currentGames;
+
+      if (!hasChanges && (!directData.teams || directData.teams.length === 0)) {
+        return prev;
+      }
+
+      const nextState = {
+        ...prev,
+        [discKey]: {
+          ...disc,
+          teams: updatedTeams,
+          games: updatedGames,
+        }
+      };
+      disciplineDataRef.current = nextState;
+      return nextState;
+    });
+  }, [defaultForCurrentDisc]);
 
   // Suscripción Realtime directa para partidos y equipos con canal de Broadcast ultra-rápido (< 0.5s)
   useEffect(() => {
@@ -810,8 +885,12 @@ export default function SportsManager() {
     const handleFocusOrVisible = async () => {
       if (document.visibilityState === 'visible' && !isLocallyMutatingRef.current) {
         try {
-          const fresh = await fetchStateFromCloud(syncConfig);
+          const [fresh, direct] = await Promise.all([
+            fetchStateFromCloud(syncConfig),
+            fetchSupabaseDirectData(currentDiscKey)
+          ]);
           if (fresh) applyRemoteUpdate(fresh);
+          if (direct) applyDirectDataUpdate(currentDiscKey, direct);
         } catch (e) {}
       }
     };
@@ -820,8 +899,12 @@ export default function SportsManager() {
     const handleSWMessage = async (e: MessageEvent) => {
       if (e.data && e.data.type === 'SW_ACTIVATED') {
         try {
-          const fresh = await fetchStateFromCloud(syncConfig);
+          const [fresh, direct] = await Promise.all([
+            fetchStateFromCloud(syncConfig),
+            fetchSupabaseDirectData(currentDiscKey)
+          ]);
           if (fresh) applyRemoteUpdate(fresh);
+          if (direct) applyDirectDataUpdate(currentDiscKey, direct);
         } catch (e) {}
       }
     };
@@ -840,22 +923,28 @@ export default function SportsManager() {
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
       }
     };
-  }, [applyRemoteUpdate, syncConfig]);
+  }, [applyRemoteUpdate, applyDirectDataUpdate, syncConfig, currentDiscKey]);
 
-  // Polling de respaldo cada 2.5s para sincronizar marcadores y equipos sin interrupciones
+  // Polling de respaldo ultra-rápido cada 2s para sincronizar marcadores directamente de Supabase en móviles
   useEffect(() => {
     const timer = setInterval(async () => {
       if (!syncConfig.enabled || isLocallyMutatingRef.current) return;
       try {
-        const remote = await fetchStateFromCloud(syncConfig);
+        const [remote, direct] = await Promise.all([
+          fetchStateFromCloud(syncConfig),
+          fetchSupabaseDirectData(currentDiscKey)
+        ]);
         if (remote) {
           applyRemoteUpdate(remote);
         }
+        if (direct) {
+          applyDirectDataUpdate(currentDiscKey, direct);
+        }
       } catch (e) {}
-    }, 2500);
+    }, 2000);
 
     return () => clearInterval(timer);
-  }, [syncConfig, applyRemoteUpdate]);
+  }, [syncConfig, currentDiscKey, applyRemoteUpdate, applyDirectDataUpdate]);
 
   // Función de sincronización forzada exclusiva para acciones del usuario
   const triggerPushSync = useCallback(async (customData?: Partial<CloudTournamentState>) => {
@@ -1211,6 +1300,12 @@ export default function SportsManager() {
       setGames(prev => prev.map(g => (g.id === gameId ? { ...g, ...updates } : g)));
       stopEditingGame(gameId);
 
+      // Sincronización instantánea en tiempo real por Broadcast y Tournament Sync
+      broadcastScoreUpdate(currentDiscKey, merged);
+      setTimeout(() => {
+        triggerPushSync({ disciplineData: disciplineDataRef.current });
+      }, 50);
+
       // Disparo de notificación y auditoría al finalizar partido
       if (updates.status === 'Finalizado' && targetGame?.status !== 'Finalizado') {
         const hs = updates.homeScore ?? merged.homeScore;
@@ -1225,7 +1320,7 @@ export default function SportsManager() {
       console.error("Error al guardar en Supabase:", err);
       alert("Error de guardado en Supabase: " + (err?.message || err));
     }
-  }, [currentGames, currentDiscKey, selectedDiscipline, branding.title, triggerNotification, addAuditLog, stopEditingGame]);
+  }, [currentGames, currentDiscKey, selectedDiscipline, branding.title, triggerNotification, addAuditLog, stopEditingGame, triggerPushSync]);
 
   const handleAddGame = (newGame: Omit<Game, 'id'>) => {
     const id = Date.now().toString();

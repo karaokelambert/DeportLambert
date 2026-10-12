@@ -419,7 +419,7 @@ export async function broadcastScoreUpdate(discipline: string, payload: any) {
   try {
     const channel = getBroadcastChannel(discipline);
     if (channel) {
-      await channel.send({
+      channel.send({
         type: 'broadcast',
         event: 'score-update',
         payload: {
@@ -427,8 +427,22 @@ export async function broadcastScoreUpdate(discipline: string, payload: any) {
           discipline,
           timestamp: Date.now(),
         }
-      });
-      console.log('[Supabase Broadcast] Emitido score-update instantáneo:', payload.gameId || payload.id);
+      }).catch(() => {});
+      console.log('[Supabase Broadcast] Emitido score-update instantáneo en ' + discipline + ':', payload.gameId || payload.id);
+    }
+
+    // Emitir también al canal global para que todos los dispositivos móviles lo reciban sin importar la vista
+    const globalChannel = getBroadcastChannel('realtime_tourney_deportlambert_live');
+    if (globalChannel) {
+      globalChannel.send({
+        type: 'broadcast',
+        event: 'score-update',
+        payload: {
+          ...payload,
+          discipline,
+          timestamp: Date.now(),
+        }
+      }).catch(() => {});
     }
   } catch (err) {
     console.warn('[Supabase Broadcast] Error al emitir score-update:', err);
