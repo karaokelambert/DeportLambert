@@ -38,7 +38,7 @@ function copyRecursiveSync(src, dest) {
   }
 }
 
-const TARGET_SW_VERSION = 'jl-sports-hub-v14';
+const TARGET_SW_VERSION = 'jl-sports-hub-v15';
 
 function syncServiceWorkerVersion(swPath) {
   if (fs.existsSync(swPath)) {

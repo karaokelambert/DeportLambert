@@ -17,8 +17,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://nhurcieffcazroqfarrh.supabase.co';
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://giqvkcgfxdffxpzklxri.supabase.co';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdpcXZrY2dmeGRmZnhwemtseHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2NjU4OTgsImV4cCI6MjEwMDI0MTg5OH0.9gzYz5L3eiOLd-J4TjTM4VKAcuT_O1Ya8prU85X_2rM';
 const CHANNEL_ID = 'deportlambert_live';
 
 const seedFilePublic = path.join(rootDir, 'DeportLambert-main', 'public', 'database_seed.json');

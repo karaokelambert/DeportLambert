@@ -3,8 +3,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Safe embedded production credentials for GitHub Pages & standalone builds
-export const SUPABASE_PROD_URL = 'https://nhurcieffcazroqfarrh.supabase.co';
-export const SUPABASE_PROD_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg';
+export const SUPABASE_PROD_URL = 'https://giqvkcgfxdffxpzklxri.supabase.co';
+export const SUPABASE_PROD_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdpcXZrY2dmeGRmZnhwemtseHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2NjU4OTgsImV4cCI6MjEwMDI0MTg5OH0.9gzYz5L3eiOLd-J4TjTM4VKAcuT_O1Ya8prU85X_2rM';
 
 // Read from Environment Variables (Next.js & Vite conventions) or hardcoded production endpoint
 export const DEFAULT_SUPABASE_URL = 

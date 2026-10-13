@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- JL Sports Club 360 – Esquema de Tablas para Supabase Realtime Database
--- Proyecto Supabase: https://nhurcieffcazroqfarrh.supabase.co
+-- Proyecto Supabase: https://giqvkcgfxdffxpzklxri.supabase.co
 -- Copia y ejecuta este script en el SQL Editor de tu Dashboard de Supabase.
 -- ==============================================================================
 
