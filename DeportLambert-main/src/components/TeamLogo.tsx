@@ -90,15 +90,20 @@ export function resolveLogoUrl(url?: string): string {
     .replace(/^(\.\/|\/)+/, '')
     .replace(/^DeportLambert\//, '');
 
-  const cacheBuster = '?v=v11';
+  const cacheBuster = '?v=v14';
   const hasParams = cleanPath.includes('?');
   const pathWithVersion = hasParams ? cleanPath : `${cleanPath}${cacheBuster}`;
 
-  if (typeof window !== 'undefined') {
-    const pathname = window.location.pathname;
-    if (pathname.includes('/DeportLambert')) {
-      return `/DeportLambert/${pathWithVersion}`;
-    }
+  // Next.js usa basePath: '/DeportLambert' para GitHub Pages.
+  // En SSR/Export estático (window === undefined), o en GitHub Pages (pathname o hostname), siempre prefijar /DeportLambert/
+  const isDeportLambert =
+    typeof window === 'undefined' ||
+    (typeof window !== 'undefined' &&
+      (window.location.pathname.includes('/DeportLambert') ||
+       window.location.hostname.includes('github.io')));
+
+  if (isDeportLambert) {
+    return `/DeportLambert/${pathWithVersion}`;
   }
 
   return `/${pathWithVersion}`;

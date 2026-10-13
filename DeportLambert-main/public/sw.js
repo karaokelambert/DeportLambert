@@ -1,10 +1,10 @@
 // ============================================================
 // Service Worker – JL Sports Club 360 (SportsHub360)
-// Versión de Caché PWA: jl-sports-hub-v13
+// Versión de Caché PWA: jl-sports-hub-v14
 // Módulos: NetworkFirst para HTML/API/Logos + Bypass Absoluto Supabase Realtime + Desahuciado Inmediato de Caché
 // ============================================================
 
-const CACHE_NAME = 'jl-sports-hub-v13';
+const CACHE_NAME = 'jl-sports-hub-v14';
 
 const STATIC_ASSETS = [
   './',
@@ -144,7 +144,7 @@ self.addEventListener('fetch', (event) => {
         const cachedResponse = await caches.match(req);
         if (cachedResponse) return cachedResponse;
         if (url.includes('logo.png')) {
-          const fallback = (await caches.match('./logo.png')) || (await caches.match('/logo.png')) || (await caches.match('./icon.png'));
+          const fallback = (await caches.match('./logo.png')) || (await caches.match('/DeportLambert/logo.png')) || (await caches.match('/logo.png')) || (await caches.match('./icon.png'));
           if (fallback) return fallback;
         }
         return new Response('', { status: 404, statusText: 'Imagen no disponible sin conexión' });

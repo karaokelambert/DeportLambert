@@ -38,9 +38,27 @@ function copyRecursiveSync(src, dest) {
   }
 }
 
+const TARGET_SW_VERSION = 'jl-sports-hub-v14';
+
+function syncServiceWorkerVersion(swPath) {
+  if (fs.existsSync(swPath)) {
+    let content = fs.readFileSync(swPath, 'utf-8');
+    content = content.replace(/CACHE_NAME\s*=\s*['"][^'"]+['"]/, `CACHE_NAME = '${TARGET_SW_VERSION}'`);
+    content = content.replace(/Versión de Caché PWA:\s*jl-sports-hub-v\d+/i, `Versión de Caché PWA: ${TARGET_SW_VERSION}`);
+    if (!content.includes('/DeportLambert/logo.png')) {
+      content = content.replace(
+        "caches.match('./logo.png') || caches.match('/logo.png')",
+        "caches.match('./logo.png') || caches.match('/DeportLambert/logo.png') || caches.match('/logo.png')"
+      );
+    }
+    fs.writeFileSync(swPath, content, 'utf-8');
+    console.log(`✓ Service Worker sincronizado a ${TARGET_SW_VERSION} en: ${swPath}`);
+  }
+}
+
 async function main() {
   console.log('=====================================================');
-  console.log('🚀 Iniciando Despliegue de JL Sports Club 360 (v11)');
+  console.log(`🚀 Iniciando Despliegue de JL Sports Club 360 (${TARGET_SW_VERSION})`);
   console.log('=====================================================');
 
   // 1. Asegurar database_seed.json
@@ -51,11 +69,14 @@ async function main() {
     );
   }
 
-  // 2. Compilar aplicación Next.js
+  // 2. Sincronizar Service Worker en public antes de la compilación
+  syncServiceWorkerVersion(path.join(appDir, 'public', 'sw.js'));
+
+  // 3. Compilar aplicación Next.js
   console.log('\n[1/4] Compilando aplicación Next.js en export estático...');
   run('npm run build', appDir);
 
-  // 3. Sincronizar artefactos de out a la raíz para GitHub Pages
+  // 4. Sincronizar artefactos de out a la raíz para GitHub Pages
   console.log('\n[2/4] Copiando archivos de out/ a la raíz del repositorio...');
   if (fs.existsSync(outDir)) {
     copyRecursiveSync(outDir, rootDir);
@@ -65,35 +86,26 @@ async function main() {
     process.exit(1);
   }
 
-  // 4. Asegurar versión de sw.js en todas las rutas
-  console.log('\n[3/4] Verificando versión de Service Worker (jl-sports-hub-v13)...');
+  // 5. Asegurar versión de sw.js en todas las rutas (raíz, out, public)
+  console.log(`\n[3/4] Verificando versión de Service Worker (${TARGET_SW_VERSION})...`);
   const swPaths = [
     path.join(rootDir, 'sw.js'),
     path.join(appDir, 'public', 'sw.js'),
     path.join(appDir, 'out', 'sw.js')
   ];
+  swPaths.forEach(syncServiceWorkerVersion);
 
-  swPaths.forEach(swPath => {
-    if (fs.existsSync(swPath)) {
-      let content = fs.readFileSync(swPath, 'utf-8');
-      if (!content.includes("'jl-sports-hub-v13'")) {
-        content = content.replace(/CACHE_NAME\s*=\s*['"][^'"]+['"]/, "CACHE_NAME = 'jl-sports-hub-v13'");
-        fs.writeFileSync(swPath, content, 'utf-8');
-        console.log(`✓ Actualizada versión a jl-sports-hub-v13 en: ${swPath}`);
-      }
-    }
-  });
-
-  // 5. Git Commit y Push
+  // 6. Git Commit y Push
   console.log('\n[4/4] Publicando cambios en GitHub Pages (origin main)...');
   try {
     run('git add -A');
     const status = execSync('git status --porcelain', { cwd: rootDir }).toString();
+    const commitMsg = process.argv[2] || `fix(deploy): producción actualizada con logos verificados, base path GitHub Pages y Service Worker ${TARGET_SW_VERSION}`;
     if (status.trim().length > 0) {
-      run('git commit -m "fix(realtime): sincronización móvil garantizada con canal compartido y sondeo directo de tablas Supabase (v13)"');
+      run(`git commit -m "${commitMsg}"`);
       run('git push origin main');
       console.log('\n✅ ¡Despliegue completado con éxito a origin main!');
-      console.log('GitHub Pages actualizará los cambios y el Service Worker v13 invalidará la caché móvil de inmediato.');
+      console.log(`GitHub Pages actualizará los cambios y el Service Worker ${TARGET_SW_VERSION} invalidará la caché móvil de inmediato.`);
     } else {
       console.log('ℹ️ No hay cambios pendientes para commitear.');
       run('git push origin main');
