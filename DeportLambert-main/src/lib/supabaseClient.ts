@@ -6,14 +6,20 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export const SUPABASE_PROD_URL = 'https://nhurcieffcazroqfarrh.supabase.co';
 export const SUPABASE_PROD_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5odXJjaWVmZmNhenJvcWZhcnJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMDI2MTgsImV4cCI6MjEwMzY3ODYxOH0.EF6MjOtR4kqVXPRJtspq0v2mpF-Kq-IwH3zZ5jBNKNg';
 
-// Read from Environment Variables or hardcoded production endpoint
-export const DEFAULT_SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL.trim().length > 0)
-  ? process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
-  : SUPABASE_PROD_URL;
+// Read from Environment Variables (Next.js & Vite conventions) or hardcoded production endpoint
+export const DEFAULT_SUPABASE_URL = 
+  (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL.trim().length > 0)
+    ? process.env.NEXT_PUBLIC_SUPABASE_URL.trim()
+    : ((process.env as any).VITE_SUPABASE_URL && (process.env as any).VITE_SUPABASE_URL.trim().length > 0)
+      ? (process.env as any).VITE_SUPABASE_URL.trim()
+      : SUPABASE_PROD_URL;
 
-export const DEFAULT_SUPABASE_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim().length > 0)
-  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim()
-  : SUPABASE_PROD_ANON_KEY;
+export const DEFAULT_SUPABASE_KEY = 
+  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim().length > 0)
+    ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.trim()
+    : ((process.env as any).VITE_SUPABASE_ANON_KEY && (process.env as any).VITE_SUPABASE_ANON_KEY.trim().length > 0)
+      ? (process.env as any).VITE_SUPABASE_ANON_KEY.trim()
+      : SUPABASE_PROD_ANON_KEY;
 
 const SUPABASE_CONFIG_KEY = 'jl360_supabase_config_v2';
 
